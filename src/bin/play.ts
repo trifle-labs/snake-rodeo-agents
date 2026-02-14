@@ -50,6 +50,7 @@ interface RunAgentOptions {
   maxRoundBudgetPct?: number;
   telegramToken?: string;
   telegramChatId?: string;
+  contrarian?: boolean;
 }
 
 function ensureStateDir(): void {
@@ -149,10 +150,12 @@ async function runAgent(options: RunAgentOptions = {}): Promise<void> {
 
   console.log(`=== Snake Agent: ${agentName} ===`);
   console.log(`Server: ${serverUrl}`);
-  console.log(`Strategy: ${strategyName}`);
+  console.log(`Strategy: ${strategyName}${options.contrarian ? ' (contrarian)' : ''}`);
 
   const client = new SnakeClient(serverUrl, null);
-  const strategy = getStrategy(strategyName);
+  const strategyOpts: Record<string, unknown> = {};
+  if (options.contrarian) strategyOpts.contrarian = true;
+  const strategy = getStrategy(strategyName, strategyOpts);
 
   // Optional Telegram logging
   const tg = options.telegramToken && options.telegramChatId
@@ -374,6 +377,7 @@ async function main(): Promise<void> {
       poll: { type: 'string', default: '1000' },
       'telegram-token': { type: 'string' },
       'telegram-chat-id': { type: 'string' },
+      contrarian: { type: 'boolean', default: false },
     },
     allowPositionals: true,
   });
@@ -385,6 +389,7 @@ async function main(): Promise<void> {
     pollMs: parseInt(values.poll!, 10),
     telegramToken: values['telegram-token'],
     telegramChatId: values['telegram-chat-id'],
+    contrarian: values.contrarian,
   });
 }
 

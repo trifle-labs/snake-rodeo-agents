@@ -111,9 +111,12 @@ async function runAgent(options = {}) {
     const maxRoundBudgetPct = options.maxRoundBudgetPct || 0.2;
     console.log(`=== Snake Agent: ${agentName} ===`);
     console.log(`Server: ${serverUrl}`);
-    console.log(`Strategy: ${strategyName}`);
+    console.log(`Strategy: ${strategyName}${options.contrarian ? ' (contrarian)' : ''}`);
     const client = new SnakeClient(serverUrl, null);
-    const strategy = getStrategy(strategyName);
+    const strategyOpts = {};
+    if (options.contrarian)
+        strategyOpts.contrarian = true;
+    const strategy = getStrategy(strategyName, strategyOpts);
     // Optional Telegram logging
     const tg = options.telegramToken && options.telegramChatId
         ? new TelegramLogger({ botToken: options.telegramToken, chatId: options.telegramChatId })
@@ -307,6 +310,7 @@ async function main() {
             poll: { type: 'string', default: '1000' },
             'telegram-token': { type: 'string' },
             'telegram-chat-id': { type: 'string' },
+            contrarian: { type: 'boolean', default: false },
         },
         allowPositionals: true,
     });
@@ -317,6 +321,7 @@ async function main() {
         pollMs: parseInt(values.poll, 10),
         telegramToken: values['telegram-token'],
         telegramChatId: values['telegram-chat-id'],
+        contrarian: values.contrarian,
     });
 }
 main().catch((e) => {

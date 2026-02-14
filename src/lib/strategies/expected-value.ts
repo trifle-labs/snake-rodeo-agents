@@ -216,23 +216,28 @@ export class ExpectedValueStrategy extends BaseStrategy {
       : null;
 
     // Early game -- join best team considering score + community + distance
+    // Contrarian mode inverts pool weight (prefer less popular teams for bigger payout)
+    // and reduces score weight so proximity matters more than being the leader.
+    const contrarian = this.getOption('contrarian', false);
+
     if (!currentTeamId) {
-      // Composite score: heavily weight leading score, then community pool, then proximity
       const ranked = [...teamStats]
         .filter((t) => t.bfsDist < Infinity)
         .sort((a, b) => {
-          // Primary: score (closer to winning is better)
-          const scoreWeight = 100;
+          // Primary: score (contrarian: reduced weight so we don't always chase the leader)
+          const scoreWeight = contrarian ? 20 : 100;
           const scoreA = a.team.score * scoreWeight;
           const scoreB = b.team.score * scoreWeight;
 
-          // Secondary: community pool (more popular = better, since last-vote-wins means majority controls direction)
-          const poolWeight = 10;
+          // Secondary: community pool
+          // Normal: favor popular teams (majority controls direction)
+          // Contrarian: favor unpopular teams (fewer backers = bigger payout share)
+          const poolWeight = contrarian ? -15 : 10;
           const poolA = (a.team.pool || 0) * poolWeight;
           const poolB = (b.team.pool || 0) * poolWeight;
 
-          // Tertiary: proximity (closer fruit = better)
-          const distPenalty = 5;
+          // Tertiary: proximity (contrarian: higher weight so reachability dominates)
+          const distPenalty = contrarian ? 20 : 5;
           const distA = a.bfsDist * distPenalty;
           const distB = b.bfsDist * distPenalty;
 
@@ -259,44 +264,47 @@ export class ExpectedValueStrategy extends BaseStrategy {
 
       // If our fruit is reachable and we're not hopelessly behind, stay loyal
       if (fruitsNeeded > 0 && currentTeam.team.closestFruit && currentTeam.bfsDist < Infinity) {
-        // Check if another team is about to win and we should bandwagon.
-        // Switch when: (a) another team needs just 1 fruit AND is close to it,
-        // AND we're behind them in score. Even 1 fruit behind is enough to switch.
-        const aboutToWin = teamStats.find((t) =>
-          !t.isCurrentTeam &&
-          (parsed.fruitsToWin - t.team.score) === 1 &&
-          t.bfsDist <= 2 &&
-          t.bfsDist < Infinity
-        );
+        // Contrarian mode: stay loyal to our underdog team -- no bandwagoning
+        if (!contrarian) {
+          // Check if another team is about to win and we should bandwagon.
+          // Switch when: (a) another team needs just 1 fruit AND is close to it,
+          // AND we're behind them in score. Even 1 fruit behind is enough to switch.
+          const aboutToWin = teamStats.find((t) =>
+            !t.isCurrentTeam &&
+            (parsed.fruitsToWin - t.team.score) === 1 &&
+            t.bfsDist <= 2 &&
+            t.bfsDist < Infinity
+          );
 
-        if (aboutToWin && scoreDiff >= 1) {
-          return {
-            shouldPlay: true,
-            recommendedTeam: aboutToWin.team,
-            bfsDist: aboutToWin.bfsDist,
-            bfsClosestFruit: aboutToWin.bfsClosestFruit,
-            reason: `bandwagon(${aboutToWin.team.id},s:${aboutToWin.team.score},d:${aboutToWin.bfsDist})`,
-            teamEV: aboutToWin.ev,
-          };
-        }
+          if (aboutToWin && scoreDiff >= 1) {
+            return {
+              shouldPlay: true,
+              recommendedTeam: aboutToWin.team,
+              bfsDist: aboutToWin.bfsDist,
+              bfsClosestFruit: aboutToWin.bfsClosestFruit,
+              reason: `bandwagon(${aboutToWin.team.id},s:${aboutToWin.team.score},d:${aboutToWin.bfsDist})`,
+              teamEV: aboutToWin.ev,
+            };
+          }
 
-        // Also bandwagon if another team is dominating (2+ more fruits than us)
-        // even if they're not yet 1 away from winning
-        const dominator = teamStats.find((t) =>
-          !t.isCurrentTeam &&
-          t.team.score > ourScore + 1 &&
-          t.bfsDist < Infinity
-        );
+          // Also bandwagon if another team is dominating (2+ more fruits than us)
+          // even if they're not yet 1 away from winning
+          const dominator = teamStats.find((t) =>
+            !t.isCurrentTeam &&
+            t.team.score > ourScore + 1 &&
+            t.bfsDist < Infinity
+          );
 
-        if (dominator && fruitsNeeded > 1) {
-          return {
-            shouldPlay: true,
-            recommendedTeam: dominator.team,
-            bfsDist: dominator.bfsDist,
-            bfsClosestFruit: dominator.bfsClosestFruit,
-            reason: `join-leader(${dominator.team.id},s:${dominator.team.score},d:${dominator.bfsDist})`,
-            teamEV: dominator.ev,
-          };
+          if (dominator && fruitsNeeded > 1) {
+            return {
+              shouldPlay: true,
+              recommendedTeam: dominator.team,
+              bfsDist: dominator.bfsDist,
+              bfsClosestFruit: dominator.bfsClosestFruit,
+              reason: `join-leader(${dominator.team.id},s:${dominator.team.score},d:${dominator.bfsDist})`,
+              teamEV: dominator.ev,
+            };
+          }
         }
 
         return {
