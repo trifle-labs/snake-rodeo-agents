@@ -57,7 +57,7 @@ export class ConservativeStrategy extends BaseStrategy {
             };
         }
         // Find safest direction that also moves toward fruit
-        const bestDir = this.findSafeDirectionToward(parsed, targetTeam.closestFruit?.fruit);
+        const bestDir = this.findSafeDirectionToward(parsed, targetTeam.closestFruit?.fruit || null);
         if (!bestDir)
             return null;
         return {
@@ -66,23 +66,6 @@ export class ConservativeStrategy extends BaseStrategy {
             amount: parsed.minBid,
             reason: 'safe_play',
         };
-    }
-    findSafestDirection(parsed) {
-        let best = null;
-        let bestSafety = -1;
-        for (const dir of parsed.validDirections) {
-            const offset = HEX_DIRECTIONS[dir];
-            const newPos = {
-                q: parsed.head.q + offset.q,
-                r: parsed.head.r + offset.r,
-            };
-            const safety = countExits(newPos, parsed.raw, OPPOSITE_DIRECTIONS[dir]);
-            if (safety > bestSafety) {
-                bestSafety = safety;
-                best = dir;
-            }
-        }
-        return best;
     }
     findSafeDirectionToward(parsed, targetFruit) {
         let best = null;

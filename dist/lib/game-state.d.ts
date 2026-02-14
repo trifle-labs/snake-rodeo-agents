@@ -18,6 +18,7 @@ export interface Team {
     id: string;
     name?: string;
     color?: string;
+    emoji?: string;
     [key: string]: unknown;
 }
 export interface ParsedTeam extends Team {
@@ -77,7 +78,7 @@ export interface ParsedGameState {
     raw: GameState;
 }
 export declare const HEX_DIRECTIONS: Record<Direction, HexPos>;
-export declare const OPPOSITE_DIRECTIONS: Record<string, string>;
+export declare const OPPOSITE_DIRECTIONS: Record<Direction, Direction>;
 export declare const ALL_DIRECTIONS: Direction[];
 /**
  * Check if coordinates are within hex grid bounds

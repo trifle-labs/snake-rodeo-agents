@@ -27,6 +27,7 @@ export interface Team {
   id: string;
   name?: string;
   color?: string;
+  emoji?: string;
   [key: string]: unknown;
 }
 
@@ -105,7 +106,7 @@ export const HEX_DIRECTIONS: Record<Direction, HexPos> = {
   nw: { q: -1, r:  0 },
 };
 
-export const OPPOSITE_DIRECTIONS: Record<string, string> = {
+export const OPPOSITE_DIRECTIONS: Record<Direction, Direction> = {
   n: 's', s: 'n',
   ne: 'sw', sw: 'ne',
   se: 'nw', nw: 'se',

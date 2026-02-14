@@ -26,7 +26,7 @@ export interface AuthOptions {
 export interface AuthUser {
   id: string;
   username: string;
-  [key: string]: any;
+  [key: string]: unknown;
 }
 
 /**

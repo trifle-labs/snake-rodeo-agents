@@ -6,12 +6,13 @@
  * - Prioritizes safety over optimal direction
  * - Skips rounds where we're behind
  */
-import { BaseStrategy, VoteResult } from './base.js';
+import { BaseStrategy } from './base.js';
+import type { VoteResult, AgentState } from './base.js';
+import type { Direction, HexPos, ParsedGameState } from '../game-state.js';
 export declare class ConservativeStrategy extends BaseStrategy {
-    constructor(options?: Record<string, any>);
-    shouldPlay(parsed: any, balance: number, state: any): boolean;
-    computeVote(parsed: any, balance: number, state: any): VoteResult;
-    findSafestDirection(parsed: any): string | null;
-    findSafeDirectionToward(parsed: any, targetFruit: any): string | null;
+    constructor(options?: Record<string, unknown>);
+    shouldPlay(parsed: ParsedGameState, balance: number, state: AgentState): boolean;
+    computeVote(parsed: ParsedGameState, balance: number, state: AgentState): VoteResult;
+    findSafeDirectionToward(parsed: ParsedGameState, targetFruit: HexPos | null): Direction | null;
 }
 //# sourceMappingURL=conservative.d.ts.map

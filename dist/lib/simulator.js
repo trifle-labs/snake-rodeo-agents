@@ -169,7 +169,6 @@ export function advanceRound(gameState, direction, winningTeamId) {
         q: head.q + offset.q,
         r: head.r + offset.r,
     };
-    newHead.winningTeam = winningTeamId;
     const radius = gameState.gridSize.radius;
     // Check collision (boundary or self)
     if (!isInBounds(newHead.q, newHead.r, radius)) {
@@ -207,7 +206,8 @@ export function advanceRound(gameState, direction, winningTeamId) {
             newFruitScores[winningTeamId] = (newFruitScores[winningTeamId] || 0) + 1;
         }
         newEatenFruits.push({
-            ...ateFruit,
+            q: ateFruit.q,
+            r: ateFruit.r,
             team: winningTeamId || ateTeam,
             emoji: TEAM_CONFIG.find(t => t.id === ateTeam)?.emoji || '?',
             order: newEatenFruits.length + 1,
@@ -302,14 +302,14 @@ export class SimAgent {
             votesPlaced: this.votesPlaced,
             wins: this.wins,
         };
-        const vote = this.strategy.computeVote(parsed, this.balance, state);
-        if (!vote || vote.skip)
+        const result = this.strategy.computeVote(parsed, this.balance, state);
+        if (!result || 'skip' in result)
             return null;
-        this.currentTeam = vote.team.id;
-        this.balance -= vote.amount;
-        this.totalSpent += vote.amount;
+        this.currentTeam = result.team.id;
+        this.balance -= result.amount;
+        this.totalSpent += result.amount;
         this.votesPlaced++;
-        return vote;
+        return result;
     }
 }
 /**

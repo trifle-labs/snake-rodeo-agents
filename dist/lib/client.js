@@ -14,6 +14,7 @@ export class SnakeClient {
     setToken(token) {
         this.token = token;
     }
+    /** Low-level HTTP request. Returns parsed JSON. `any` is intentional at the HTTP boundary. */
     async request(path, options = {}) {
         const url = `${this.backendUrl}${path}`;
         const res = await fetch(url, {

@@ -6,6 +6,7 @@
  * The simulator resolves votes and advances the game state.
  */
 import type { HexPos, Direction, ParsedGameState } from './game-state.js';
+import type { VoteResult, VoteAction, AgentState } from './strategies/base.js';
 interface TeamConfig {
     id: string;
     name: string;
@@ -26,6 +27,12 @@ export interface RodeoCycleConfig {
     simpleBid: boolean;
 }
 export declare const RODEO_CYCLES: RodeoCycleConfig[];
+/** A fruit that was eaten during a game */
+interface EatenFruit extends HexPos {
+    team: string | null;
+    emoji: string;
+    order: number;
+}
 /**
  * Raw game state as used by the simulator (mirrors the server shape).
  */
@@ -42,10 +49,10 @@ export interface SimGameState {
         radius: number;
     };
     apples: Record<string, HexPos[]>;
-    eatenFruits: any[];
+    eatenFruits: EatenFruit[];
     fruitScores: Record<string, number>;
     teamPools: Record<string, number>;
-    votes: Record<string, any>;
+    votes: Record<string, unknown>;
     gameActive: boolean;
     winner: string | null;
     prizePool: number;
@@ -103,34 +110,21 @@ interface RoundLogEntry {
 export interface Strategy {
     name: string;
     description?: string;
-    computeVote(parsed: ParsedGameState, balance: number, state: AgentState): Vote | null;
-    shouldCounterBid?(parsed: ParsedGameState, balance: number, state: any, ourVote: Vote): Vote | null;
+    computeVote(parsed: ParsedGameState, balance: number, state: AgentState): VoteResult;
+    shouldCounterBid?(parsed: ParsedGameState, balance: number, state: AgentState, ourVote: VoteAction): VoteResult;
 }
-export interface Vote {
-    direction: Direction;
-    team: {
-        id: string;
-        emoji?: string;
-        [key: string]: any;
-    };
-    amount: number;
-    reason: string;
-    skip?: boolean;
-}
-export interface AgentState {
-    currentTeam: string | null;
-    roundSpend: number;
-    roundVoteCount: number;
-    lastRound: number;
-    gamesPlayed: number;
-    votesPlaced: number;
-    wins: number;
+interface ConfigResult {
+    config: string;
+    games: number;
+    wins: Record<string, number>;
+    avgRounds: number;
+    noWinner: number;
 }
 export interface TournamentResults {
     totalGames: number;
     wins: Record<string, number>;
     avgRounds: number;
-    configResults: any[];
+    configResults: ConfigResult[];
     agentStats?: {
         name: string;
         strategy: string;
@@ -164,7 +158,7 @@ export declare class SimAgent {
     fruitsCollected: number;
     constructor(id: string, name: string, strategy: Strategy, balance?: number);
     reset(balance?: number): void;
-    computeVote(gameState: SimGameState): Vote | null;
+    computeVote(gameState: SimGameState): VoteAction | null;
 }
 export interface SimulateOptions {
     maxRounds?: number;

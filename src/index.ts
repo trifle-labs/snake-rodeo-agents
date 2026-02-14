@@ -26,6 +26,13 @@ export {
 export type {
   HexPos,
   Direction,
+  GridSize,
+  Snake,
+  Team,
+  ParsedTeam,
+  ClosestFruitResult,
+  BfsResult,
+  GameState,
   ParsedGameState,
 } from './lib/game-state.js';
 
@@ -35,6 +42,13 @@ export {
   listStrategiesWithInfo,
   BaseStrategy,
 } from './lib/strategies/index.js';
+
+export type {
+  VoteResult,
+  VoteAction,
+  VoteSkip,
+  AgentState,
+} from './lib/strategies/base.js';
 
 // API client
 export { SnakeClient } from './lib/client.js';

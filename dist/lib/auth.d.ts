@@ -20,7 +20,7 @@ export interface AuthOptions {
 export interface AuthUser {
     id: string;
     username: string;
-    [key: string]: any;
+    [key: string]: unknown;
 }
 /**
  * Generate a new random wallet and authenticate against the backend.

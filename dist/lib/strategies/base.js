@@ -2,11 +2,11 @@
  * Base Strategy Class
  *
  * All strategies must extend this class and implement:
- * - computeVote(parsed, balance, state) -> { direction, team, amount, reason } | null
+ * - computeVote(parsed, balance, state) -> VoteAction | VoteSkip | null
  *
  * Strategies can optionally override:
  * - shouldPlay(parsed, balance, state) -> boolean
- * - shouldCounterBid(parsed, balance, state, ourVote) -> vote object | null
+ * - shouldCounterBid(parsed, balance, state, ourVote) -> VoteAction | VoteSkip | null
  * - onGameStart(parsed, state) -> void
  * - onGameEnd(parsed, state, didWin) -> void
  * - onRoundEnd(parsed, state) -> void
@@ -23,10 +23,6 @@ export class BaseStrategy {
     }
     /**
      * Compute the optimal vote for this round
-     * @param parsed - Parsed game state
-     * @param balance - Current ball balance
-     * @param state - Daemon state (currentTeam, etc.)
-     * @returns { direction, team, amount, reason } or null to skip
      */
     computeVote(parsed, balance, state) {
         throw new Error('Strategy must implement computeVote()');
@@ -53,12 +49,6 @@ export class BaseStrategy {
      * - Voting in extension window (<5s left): timer += 5s, minBid *= 2
      * - Payout is per vote count, not cumulative amount
      * - All-pay: everyone pays regardless of outcome
-     *
-     * @param parsed - Current parsed game state
-     * @param balance - Current ball balance
-     * @param state - Daemon state with roundSpend tracking
-     * @param ourVote - The vote we submitted earlier this round
-     * @returns Vote object to counter, or null to let it go
      */
     shouldCounterBid(parsed, balance, state, ourVote) {
         return null;
@@ -85,7 +75,7 @@ export class BaseStrategy {
      * Get option value with default fallback
      */
     getOption(key, defaultValue) {
-        return this.options[key] ?? defaultValue;
+        return (this.options[key] ?? defaultValue);
     }
     /**
      * Score a direction based on safety (exits from new position)

@@ -30,7 +30,7 @@ export class AggressiveStrategy extends BaseStrategy {
         const targetTeam = sortedTeams[0];
         if (!targetTeam)
             return null;
-        const targetFruit = targetTeam.closestFruit?.fruit;
+        const targetFruit = targetTeam.closestFruit?.fruit || null;
         const bestDir = this.findBestDirection(parsed, targetFruit);
         if (!bestDir)
             return null;

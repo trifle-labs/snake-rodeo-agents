@@ -31,7 +31,7 @@ export class ExpectedValueStrategy extends BaseStrategy {
         }
         const targetTeam = analysis.recommendedTeam;
         // Use BFS-closest fruit (may differ from hex-closest)
-        const targetFruit = analysis.bfsClosestFruit || targetTeam.closestFruit?.fruit;
+        const targetFruit = analysis.bfsClosestFruit || targetTeam.closestFruit?.fruit || null;
         const fruitDist = analysis.bfsDist ?? targetTeam.closestFruit?.distance ?? '?';
         // Score all valid directions
         const dirScores = parsed.validDirections.map((dir) => ({
@@ -127,7 +127,7 @@ export class ExpectedValueStrategy extends BaseStrategy {
             // Find BFS-closest fruit across ALL team fruits (not just hex-closest).
             // Uses time-aware BFS (tail segments clear as snake moves).
             let bfsDist = team.closestFruit?.distance ?? Infinity;
-            let bfsClosestFruit = team.closestFruit?.fruit;
+            let bfsClosestFruit = team.closestFruit?.fruit ?? null;
             const teamFruits = parsed.raw?.apples?.[team.id] || [];
             for (const fruit of teamFruits) {
                 const bfs = bfsDistance(parsed.head, fruit, parsed.raw, true, true);
@@ -323,7 +323,7 @@ export class ExpectedValueStrategy extends BaseStrategy {
         };
         let score = 0;
         // Use BFS-closest fruit if provided, otherwise fall back to hex-closest
-        const targetFruit = explicitTargetFruit || targetTeam.closestFruit?.fruit;
+        const targetFruit = explicitTargetFruit || targetTeam.closestFruit?.fruit || null;
         // === Fruit proximity score (BFS-based) ===
         if (targetFruit) {
             const dist = hexDistance(newPos, targetFruit);

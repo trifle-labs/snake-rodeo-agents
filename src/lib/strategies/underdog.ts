@@ -7,8 +7,9 @@
  * - Good for building ball balance over time
  */
 
-import { BaseStrategy, VoteResult } from './base.js';
-import type { Direction } from '../game-state.js';
+import { BaseStrategy } from './base.js';
+import type { VoteResult, AgentState } from './base.js';
+import type { Direction, HexPos, ParsedGameState, ParsedTeam } from '../game-state.js';
 import {
   HEX_DIRECTIONS,
   OPPOSITE_DIRECTIONS,
@@ -17,7 +18,7 @@ import {
 } from '../game-state.js';
 
 export class UnderdogStrategy extends BaseStrategy {
-  constructor(options: Record<string, any> = {}) {
+  constructor(options: Record<string, unknown> = {}) {
     super(
       'underdog',
       'Backs teams with small pools for bigger payouts.',
@@ -25,7 +26,7 @@ export class UnderdogStrategy extends BaseStrategy {
     );
   }
 
-  computeVote(parsed: any, balance: number, state: any): VoteResult {
+  computeVote(parsed: ParsedGameState, balance: number, state: AgentState): VoteResult {
     if (!this.shouldPlay(parsed, balance, state)) {
       return null;
     }
@@ -35,7 +36,7 @@ export class UnderdogStrategy extends BaseStrategy {
 
     // Find underdog teams with good payout potential
     const candidates = parsed.teams
-      .filter((team: any) => {
+      .filter((team) => {
         // Must have fruits to score
         if (!team.closestFruit) return false;
         // Must have small pool
@@ -45,22 +46,22 @@ export class UnderdogStrategy extends BaseStrategy {
         if (fruitsNeeded > parsed.fruitsToWin) return false;
         return true;
       })
-      .map((team: any) => {
+      .map((team) => {
         const payoutMultiplier = parsed.prizePool / (team.pool + 1);
         return { team, payoutMultiplier };
       })
-      .filter((t: any) => t.payoutMultiplier >= minPayoutMultiplier)
-      .sort((a: any, b: any) => b.payoutMultiplier - a.payoutMultiplier);
+      .filter((t) => t.payoutMultiplier >= minPayoutMultiplier)
+      .sort((a, b) => b.payoutMultiplier - a.payoutMultiplier);
 
     if (candidates.length === 0) {
       // Fall back to team with smallest pool that can still win
       const fallback = [...parsed.teams]
-        .filter((t: any) => t.closestFruit)
-        .sort((a: any, b: any) => a.pool - b.pool)[0];
+        .filter((t) => t.closestFruit)
+        .sort((a, b) => a.pool - b.pool)[0];
 
       if (!fallback) return null;
 
-      const bestDir = this.findBestDirection(parsed, fallback.closestFruit?.fruit);
+      const bestDir = this.findBestDirection(parsed, fallback.closestFruit?.fruit || null);
       if (!bestDir) return null;
 
       return {
@@ -72,7 +73,7 @@ export class UnderdogStrategy extends BaseStrategy {
     }
 
     const targetTeam = candidates[0].team;
-    const targetFruit = targetTeam.closestFruit?.fruit;
+    const targetFruit = targetTeam.closestFruit?.fruit || null;
     const bestDir = this.findBestDirection(parsed, targetFruit);
 
     if (!bestDir) return null;
@@ -85,13 +86,13 @@ export class UnderdogStrategy extends BaseStrategy {
     };
   }
 
-  findBestDirection(parsed: any, targetFruit: any): string | null {
-    let best: string | null = null;
+  findBestDirection(parsed: ParsedGameState, targetFruit: HexPos | null): Direction | null {
+    let best: Direction | null = null;
     let bestScore = -Infinity;
 
-    for (const dir of parsed.validDirections as Direction[]) {
+    for (const dir of parsed.validDirections) {
       const offset = HEX_DIRECTIONS[dir];
-      const newPos = {
+      const newPos: HexPos = {
         q: parsed.head.q + offset.q,
         r: parsed.head.r + offset.r,
       };
@@ -105,7 +106,7 @@ export class UnderdogStrategy extends BaseStrategy {
       }
 
       // Safety
-      const exits = countExits(newPos, parsed.raw, OPPOSITE_DIRECTIONS[dir] as Direction);
+      const exits = countExits(newPos, parsed.raw, OPPOSITE_DIRECTIONS[dir]);
       score += exits * 8;
 
       if (score > bestScore) {

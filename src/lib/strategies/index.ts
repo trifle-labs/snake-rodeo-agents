@@ -11,7 +11,7 @@ import { ConservativeStrategy } from './conservative.js';
 import { RandomStrategy } from './random.js';
 import { BaseStrategy } from './base.js';
 
-type StrategyConstructor = new (options?: Record<string, any>) => BaseStrategy;
+type StrategyConstructor = new (options?: Record<string, unknown>) => BaseStrategy;
 
 // Registry of all available strategies
 const STRATEGIES: Record<string, StrategyConstructor> = {
@@ -35,7 +35,7 @@ const ALIASES: Record<string, string> = {
 /**
  * Get a strategy instance by name
  */
-export function getStrategy(name: string, options: Record<string, any> = {}): BaseStrategy {
+export function getStrategy(name: string, options: Record<string, unknown> = {}): BaseStrategy {
   // Resolve alias
   const resolvedName = ALIASES[name] || name;
 

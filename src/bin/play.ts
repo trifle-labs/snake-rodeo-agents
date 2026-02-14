@@ -21,6 +21,7 @@ import { SnakeClient } from '../lib/client.js';
 import { parseGameState, getTeamById } from '../lib/game-state.js';
 import type { ParsedGameState } from '../lib/game-state.js';
 import { getStrategy } from '../lib/strategies/index.js';
+import type { VoteAction, AgentState } from '../lib/strategies/base.js';
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const STATE_DIR = join(__dirname, '.state');
@@ -48,14 +49,6 @@ interface RunAgentOptions {
   maxRoundBudgetPct?: number;
 }
 
-interface Vote {
-  direction: string;
-  team: { id: string; emoji?: string; [key: string]: any };
-  amount: number;
-  reason: string;
-  skip?: boolean;
-}
-
 function ensureStateDir(): void {
   if (!existsSync(STATE_DIR)) {
     mkdirSync(STATE_DIR, { recursive: true });
@@ -76,7 +69,7 @@ function saveCredentials(creds: Credentials): void {
   writeFileSync(CREDENTIALS_FILE, JSON.stringify(creds, null, 2));
 }
 
-function logEvent(entry: Record<string, any>): void {
+function logEvent(entry: Record<string, unknown>): void {
   ensureStateDir();
   const line = JSON.stringify({ ...entry, ts: new Date().toISOString() }) + '\n';
   appendFileSync(GAME_LOG_FILE, line);
@@ -119,8 +112,9 @@ async function ensureAuth(
       const user = await checkToken(backendUrl, result.token);
       console.log(`  Re-authenticated as ${user?.username || result.address} (id:${user?.id})`);
       return user;
-    } catch (e: any) {
-      console.log(`  Re-auth failed: ${e.message}`);
+    } catch (e: unknown) {
+      const msg = e instanceof Error ? e.message : String(e);
+      console.log(`  Re-auth failed: ${msg}`);
     }
   }
 
@@ -168,7 +162,7 @@ async function runAgent(options: RunAgentOptions = {}): Promise<void> {
   let lastRound: number = -1;
   let currentTeam: string | null = null;
   let inGame: boolean = false;
-  let roundVote: Vote | null = null;
+  let roundVote: VoteAction | null = null;
   let roundSpend: number = 0;
   let roundVoteCount: number = 0;
   let gamesPlayed: number = 0;
@@ -255,7 +249,7 @@ async function runAgent(options: RunAgentOptions = {}): Promise<void> {
         lastRound = parsed.round!;
 
         const bal = await client.getBalance();
-        const state = {
+        const state: AgentState = {
           currentTeam,
           roundSpend,
           roundVoteCount,
@@ -265,36 +259,39 @@ async function runAgent(options: RunAgentOptions = {}): Promise<void> {
           wins,
         };
 
-        const voteResult = strategy.computeVote(parsed, bal, state) as any;
+        const voteResult = strategy.computeVote(parsed, bal, state);
 
-        if (!voteResult || voteResult.skip) {
-          if (voteResult?.reason) {
-            process.stdout.write(`R${parsed.round}: skip(${voteResult.reason}) `);
-          }
+        if (!voteResult) {
           await sleep(pollMs);
           continue;
         }
 
-        const vote: Vote = voteResult;
+        if ('skip' in voteResult) {
+          process.stdout.write(`R${parsed.round}: skip(${voteResult.reason}) `);
+          await sleep(pollMs);
+          continue;
+        }
 
-        if (vote.team.id !== currentTeam) {
-          currentTeam = vote.team.id;
+        // voteResult is now narrowed to VoteAction
+        if (voteResult.team.id !== currentTeam) {
+          currentTeam = voteResult.team.id;
         }
 
         try {
-          await client.submitVote(vote.direction, vote.team.id, vote.amount);
-          roundVote = vote;
-          roundSpend += vote.amount;
+          await client.submitVote(voteResult.direction, voteResult.team.id, voteResult.amount);
+          roundVote = voteResult;
+          roundSpend += voteResult.amount;
           roundVoteCount++;
           votesPlaced++;
 
-          const newBal = bal - vote.amount;
+          const newBal = bal - voteResult.amount;
           process.stdout.write(
-            `R${parsed.round}: ${vote.direction}->${vote.team.emoji || vote.team.id} (${vote.reason}) bal:${newBal} `,
+            `R${parsed.round}: ${voteResult.direction}->${voteResult.team.emoji || voteResult.team.id} (${voteResult.reason}) bal:${newBal} `,
           );
-        } catch (e: any) {
-          if (!e.message?.includes('already active')) {
-            console.log(`Vote failed: ${e.message}`);
+        } catch (e: unknown) {
+          const msg = e instanceof Error ? e.message : String(e);
+          if (!msg.includes('already active')) {
+            console.log(`Vote failed: ${msg}`);
           }
         }
 
@@ -316,19 +313,19 @@ async function runAgent(options: RunAgentOptions = {}): Promise<void> {
               roundSpend,
               roundVoteCount,
               roundBudgetRemaining: budgetRemaining,
+              lastRound,
               gamesPlayed,
               votesPlaced,
               wins,
             },
             roundVote,
-          ) as any;
+          );
 
-          if (counterResult && !counterResult.skip) {
-            const counter: Vote = counterResult;
+          if (counterResult && !('skip' in counterResult)) {
             try {
-              await client.submitVote(counter.direction, counter.team.id, counter.amount);
-              roundVote = counter;
-              roundSpend += counter.amount;
+              await client.submitVote(counterResult.direction, counterResult.team.id, counterResult.amount);
+              roundVote = counterResult;
+              roundSpend += counterResult.amount;
               roundVoteCount++;
               votesPlaced++;
               process.stdout.write(`<-`);
@@ -339,8 +336,9 @@ async function runAgent(options: RunAgentOptions = {}): Promise<void> {
         }
       }
 
-    } catch (e: any) {
-      console.error(`Error: ${e.message}`);
+    } catch (e: unknown) {
+      const msg = e instanceof Error ? e.message : String(e);
+      console.error(`Error: ${msg}`);
     }
 
     const interval = roundVote ? Math.max(pollMs, 2000) : pollMs;

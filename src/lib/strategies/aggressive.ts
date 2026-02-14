@@ -7,8 +7,9 @@
  * - Willing to enter bidding wars within budget
  */
 
-import { BaseStrategy, VoteResult } from './base.js';
-import type { Direction } from '../game-state.js';
+import { BaseStrategy } from './base.js';
+import type { VoteResult, AgentState, VoteAction } from './base.js';
+import type { Direction, HexPos, ParsedGameState, ParsedTeam } from '../game-state.js';
 import {
   HEX_DIRECTIONS,
   OPPOSITE_DIRECTIONS,
@@ -17,7 +18,7 @@ import {
 } from '../game-state.js';
 
 export class AggressiveStrategy extends BaseStrategy {
-  constructor(options: Record<string, any> = {}) {
+  constructor(options: Record<string, unknown> = {}) {
     super(
       'aggressive',
       'Backs leaders, counter-bids aggressively. Gets the last word.',
@@ -25,17 +26,17 @@ export class AggressiveStrategy extends BaseStrategy {
     );
   }
 
-  computeVote(parsed: any, balance: number, state: any): VoteResult {
+  computeVote(parsed: ParsedGameState, balance: number, state: AgentState): VoteResult {
     if (!this.shouldPlay(parsed, balance, state)) {
       return null;
     }
 
-    const teamsWithFruits = parsed.teams.filter((t: any) => t.closestFruit !== null);
+    const teamsWithFruits = parsed.teams.filter((t) => t.closestFruit !== null);
     if (teamsWithFruits.length === 0) {
       return { skip: true, reason: 'no_teams_with_fruits' };
     }
 
-    const sortedTeams = [...teamsWithFruits].sort((a: any, b: any) => {
+    const sortedTeams = [...teamsWithFruits].sort((a, b) => {
       if (b.score !== a.score) return b.score - a.score;
       const aDist = a.closestFruit?.distance ?? 100;
       const bDist = b.closestFruit?.distance ?? 100;
@@ -45,7 +46,7 @@ export class AggressiveStrategy extends BaseStrategy {
     const targetTeam = sortedTeams[0];
     if (!targetTeam) return null;
 
-    const targetFruit = targetTeam.closestFruit?.fruit;
+    const targetFruit = targetTeam.closestFruit?.fruit || null;
     const bestDir = this.findBestDirection(parsed, targetFruit);
     if (!bestDir) return null;
 
@@ -61,7 +62,7 @@ export class AggressiveStrategy extends BaseStrategy {
    * Aggressive counter-bidding: will fight for direction up to N extensions.
    * Stops when cost gets too high relative to balance.
    */
-  shouldCounterBid(parsed: any, balance: number, state: any, ourVote: any): VoteResult {
+  shouldCounterBid(parsed: ParsedGameState, balance: number, state: AgentState, ourVote: VoteAction): VoteResult {
     const maxExtensions = this.getOption('maxCounterExtensions', 2);
 
     if (parsed.extensions > maxExtensions) {
@@ -85,13 +86,13 @@ export class AggressiveStrategy extends BaseStrategy {
     };
   }
 
-  findBestDirection(parsed: any, targetFruit: any): string | null {
-    let best: string | null = null;
+  findBestDirection(parsed: ParsedGameState, targetFruit: HexPos | null): Direction | null {
+    let best: Direction | null = null;
     let bestScore = -Infinity;
 
-    for (const dir of parsed.validDirections as Direction[]) {
+    for (const dir of parsed.validDirections) {
       const offset = HEX_DIRECTIONS[dir];
-      const newPos = {
+      const newPos: HexPos = {
         q: parsed.head.q + offset.q,
         r: parsed.head.r + offset.r,
       };
@@ -107,7 +108,7 @@ export class AggressiveStrategy extends BaseStrategy {
         }
       }
 
-      const exits = countExits(newPos, parsed.raw, OPPOSITE_DIRECTIONS[dir] as Direction);
+      const exits = countExits(newPos, parsed.raw, OPPOSITE_DIRECTIONS[dir]);
       score += exits * 3;
 
       if (score > bestScore) {

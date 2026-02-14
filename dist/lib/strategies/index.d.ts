@@ -4,11 +4,11 @@
  * Registers all available strategies and provides a factory method.
  */
 import { BaseStrategy } from './base.js';
-type StrategyConstructor = new (options?: Record<string, any>) => BaseStrategy;
+type StrategyConstructor = new (options?: Record<string, unknown>) => BaseStrategy;
 /**
  * Get a strategy instance by name
  */
-export declare function getStrategy(name: string, options?: Record<string, any>): BaseStrategy;
+export declare function getStrategy(name: string, options?: Record<string, unknown>): BaseStrategy;
 /**
  * List all available strategy names
  */

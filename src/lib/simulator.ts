@@ -25,6 +25,8 @@ import type {
   ParsedGameState,
 } from './game-state.js';
 
+import type { VoteResult, VoteAction, AgentState } from './strategies/base.js';
+
 // Team configs matching the server
 interface TeamConfig {
   id: string;
@@ -96,6 +98,13 @@ export const RODEO_CYCLES: RodeoCycleConfig[] = [
   },
 ];
 
+/** A fruit that was eaten during a game */
+interface EatenFruit extends HexPos {
+  team: string | null;
+  emoji: string;
+  order: number;
+}
+
 /**
  * Raw game state as used by the simulator (mirrors the server shape).
  */
@@ -109,10 +118,10 @@ export interface SimGameState {
   };
   gridSize: { type: string; radius: number };
   apples: Record<string, HexPos[]>;
-  eatenFruits: any[];
+  eatenFruits: EatenFruit[];
   fruitScores: Record<string, number>;
   teamPools: Record<string, number>;
-  votes: Record<string, any>;
+  votes: Record<string, unknown>;
   gameActive: boolean;
   winner: string | null;
   prizePool: number;
@@ -170,33 +179,23 @@ interface RoundLogEntry {
 export interface Strategy {
   name: string;
   description?: string;
-  computeVote(parsed: ParsedGameState, balance: number, state: AgentState): Vote | null;
-  shouldCounterBid?(parsed: ParsedGameState, balance: number, state: any, ourVote: Vote): Vote | null;
+  computeVote(parsed: ParsedGameState, balance: number, state: AgentState): VoteResult;
+  shouldCounterBid?(parsed: ParsedGameState, balance: number, state: AgentState, ourVote: VoteAction): VoteResult;
 }
 
-export interface Vote {
-  direction: Direction;
-  team: { id: string; emoji?: string; [key: string]: any };
-  amount: number;
-  reason: string;
-  skip?: boolean;
-}
-
-export interface AgentState {
-  currentTeam: string | null;
-  roundSpend: number;
-  roundVoteCount: number;
-  lastRound: number;
-  gamesPlayed: number;
-  votesPlaced: number;
-  wins: number;
+interface ConfigResult {
+  config: string;
+  games: number;
+  wins: Record<string, number>;
+  avgRounds: number;
+  noWinner: number;
 }
 
 export interface TournamentResults {
   totalGames: number;
   wins: Record<string, number>;
   avgRounds: number;
-  configResults: any[];
+  configResults: ConfigResult[];
   agentStats?: { name: string; strategy: string; gamesPlayed: number; wins: number; winRate: string }[];
 }
 
@@ -325,7 +324,6 @@ export function advanceRound(
     q: head.q + offset.q,
     r: head.r + offset.r,
   };
-  (newHead as any).winningTeam = winningTeamId;
 
   const radius = gameState.gridSize.radius;
 
@@ -359,7 +357,7 @@ export function advanceRound(
 
   const newApples: Record<string, HexPos[]> = { ...gameState.apples };
   const newFruitScores: Record<string, number> = { ...gameState.fruitScores };
-  const newEatenFruits = [...gameState.eatenFruits];
+  const newEatenFruits: EatenFruit[] = [...gameState.eatenFruits];
 
   if (ateFruit) {
     // Remove the eaten fruit
@@ -373,7 +371,8 @@ export function advanceRound(
     }
 
     newEatenFruits.push({
-      ...ateFruit,
+      q: ateFruit.q,
+      r: ateFruit.r,
       team: winningTeamId || ateTeam,
       emoji: TEAM_CONFIG.find(t => t.id === ateTeam)?.emoji || '?',
       order: newEatenFruits.length + 1,
@@ -465,7 +464,7 @@ export class SimAgent {
     this.votesPlaced = 0;
   }
 
-  computeVote(gameState: SimGameState): Vote | null {
+  computeVote(gameState: SimGameState): VoteAction | null {
     const parsed = parseGameState(gameState);
     if (!parsed || !parsed.active) return null;
 
@@ -479,15 +478,15 @@ export class SimAgent {
       wins: this.wins,
     };
 
-    const vote = this.strategy.computeVote(parsed, this.balance, state);
-    if (!vote || vote.skip) return null;
+    const result = this.strategy.computeVote(parsed, this.balance, state);
+    if (!result || 'skip' in result) return null;
 
-    this.currentTeam = vote.team.id;
-    this.balance -= vote.amount;
-    this.totalSpent += vote.amount;
+    this.currentTeam = result.team.id;
+    this.balance -= result.amount;
+    this.totalSpent += result.amount;
     this.votesPlaced++;
 
-    return vote;
+    return result;
   }
 }
 
@@ -527,7 +526,7 @@ export function simulateGame(
     if (!gameState.gameActive) break;
 
     // Collect votes from all agents
-    const votes: { agent: SimAgent; vote: Vote }[] = [];
+    const votes: { agent: SimAgent; vote: VoteAction }[] = [];
     for (const agent of agents) {
       const vote = agent.computeVote(gameState);
       if (vote) {
@@ -549,7 +548,7 @@ export function simulateGame(
         ? gameState.snake.currentDirection
         : validDirs[0];
 
-      const result = advanceRound(gameState, dir as Direction, null);
+      const result = advanceRound(gameState, dir, null);
       gameState = result.gameState;
       continue;
     }
@@ -570,7 +569,7 @@ export function simulateGame(
     const validDirs = getValidDirections(gameState);
     let actualDir: Direction = direction;
     if (!validDirs.includes(direction)) {
-      actualDir = validDirs[0] as Direction;
+      actualDir = validDirs[0];
       if (!actualDir) break; // dead end
     }
 
@@ -644,10 +643,10 @@ export function runTournament(
   let totalRounds = 0;
 
   for (const config of configs) {
-    const configResult: any = {
+    const configResult: ConfigResult = {
       config: config.name || 'unknown',
       games: 0,
-      wins: {} as Record<string, number>,
+      wins: {},
       avgRounds: 0,
       noWinner: 0,
     };

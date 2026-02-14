@@ -7,8 +7,9 @@
  * - Skips rounds where we're behind
  */
 
-import { BaseStrategy, VoteResult } from './base.js';
-import type { Direction } from '../game-state.js';
+import { BaseStrategy } from './base.js';
+import type { VoteResult, AgentState } from './base.js';
+import type { Direction, HexPos, ParsedGameState } from '../game-state.js';
 import {
   HEX_DIRECTIONS,
   OPPOSITE_DIRECTIONS,
@@ -17,7 +18,7 @@ import {
 } from '../game-state.js';
 
 export class ConservativeStrategy extends BaseStrategy {
-  constructor(options: Record<string, any> = {}) {
+  constructor(options: Record<string, unknown> = {}) {
     super(
       'conservative',
       'Minimum bids, prioritizes safety. Risk-averse.',
@@ -25,7 +26,7 @@ export class ConservativeStrategy extends BaseStrategy {
     );
   }
 
-  shouldPlay(parsed: any, balance: number, state: any): boolean {
+  shouldPlay(parsed: ParsedGameState, balance: number, state: AgentState): boolean {
     if (!super.shouldPlay(parsed, balance, state)) {
       return false;
     }
@@ -33,8 +34,8 @@ export class ConservativeStrategy extends BaseStrategy {
     const skipIfBehind = this.getOption('skipIfBehind', true);
 
     if (skipIfBehind && state.currentTeam) {
-      const ourTeam = parsed.teams.find((t: any) => t.id === state.currentTeam);
-      const leadingTeam = [...parsed.teams].sort((a: any, b: any) => b.score - a.score)[0];
+      const ourTeam = parsed.teams.find((t) => t.id === state.currentTeam);
+      const leadingTeam = [...parsed.teams].sort((a, b) => b.score - a.score)[0];
 
       // Skip if we're more than 1 fruit behind
       if (ourTeam && leadingTeam && leadingTeam.score - ourTeam.score > 1) {
@@ -45,15 +46,15 @@ export class ConservativeStrategy extends BaseStrategy {
     return true;
   }
 
-  computeVote(parsed: any, balance: number, state: any): VoteResult {
+  computeVote(parsed: ParsedGameState, balance: number, state: AgentState): VoteResult {
     if (!this.shouldPlay(parsed, balance, state)) {
       return null;
     }
 
     // Find the safest team to back (leading or tied, with fruits nearby)
     const sortedTeams = [...parsed.teams]
-      .filter((t: any) => t.closestFruit)
-      .sort((a: any, b: any) => {
+      .filter((t) => t.closestFruit)
+      .sort((a, b) => {
         // Primary: highest score
         if (b.score !== a.score) return b.score - a.score;
         // Secondary: closest fruit (safer to reach)
@@ -77,7 +78,7 @@ export class ConservativeStrategy extends BaseStrategy {
     }
 
     // Find safest direction that also moves toward fruit
-    const bestDir = this.findSafeDirectionToward(parsed, targetTeam.closestFruit?.fruit);
+    const bestDir = this.findSafeDirectionToward(parsed, targetTeam.closestFruit?.fruit || null);
 
     if (!bestDir) return null;
 
@@ -89,41 +90,19 @@ export class ConservativeStrategy extends BaseStrategy {
     };
   }
 
-  findSafestDirection(parsed: any): string | null {
-    let best: string | null = null;
-    let bestSafety = -1;
-
-    for (const dir of parsed.validDirections as Direction[]) {
-      const offset = HEX_DIRECTIONS[dir];
-      const newPos = {
-        q: parsed.head.q + offset.q,
-        r: parsed.head.r + offset.r,
-      };
-
-      const safety = countExits(newPos, parsed.raw, OPPOSITE_DIRECTIONS[dir] as Direction);
-
-      if (safety > bestSafety) {
-        bestSafety = safety;
-        best = dir;
-      }
-    }
-
-    return best;
-  }
-
-  findSafeDirectionToward(parsed: any, targetFruit: any): string | null {
-    let best: string | null = null;
+  findSafeDirectionToward(parsed: ParsedGameState, targetFruit: HexPos | null): Direction | null {
+    let best: Direction | null = null;
     let bestScore = -Infinity;
 
-    for (const dir of parsed.validDirections as Direction[]) {
+    for (const dir of parsed.validDirections) {
       const offset = HEX_DIRECTIONS[dir];
-      const newPos = {
+      const newPos: HexPos = {
         q: parsed.head.q + offset.q,
         r: parsed.head.r + offset.r,
       };
 
       // Safety is weighted heavily
-      const safety = countExits(newPos, parsed.raw, OPPOSITE_DIRECTIONS[dir] as Direction);
+      const safety = countExits(newPos, parsed.raw, OPPOSITE_DIRECTIONS[dir]);
       let score = safety * 15;
 
       // Bonus for moving toward target

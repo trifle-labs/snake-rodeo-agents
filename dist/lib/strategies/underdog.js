@@ -46,7 +46,7 @@ export class UnderdogStrategy extends BaseStrategy {
                 .sort((a, b) => a.pool - b.pool)[0];
             if (!fallback)
                 return null;
-            const bestDir = this.findBestDirection(parsed, fallback.closestFruit?.fruit);
+            const bestDir = this.findBestDirection(parsed, fallback.closestFruit?.fruit || null);
             if (!bestDir)
                 return null;
             return {
@@ -57,7 +57,7 @@ export class UnderdogStrategy extends BaseStrategy {
             };
         }
         const targetTeam = candidates[0].team;
-        const targetFruit = targetTeam.closestFruit?.fruit;
+        const targetFruit = targetTeam.closestFruit?.fruit || null;
         const bestDir = this.findBestDirection(parsed, targetFruit);
         if (!bestDir)
             return null;

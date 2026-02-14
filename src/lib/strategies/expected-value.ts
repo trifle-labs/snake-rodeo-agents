@@ -16,8 +16,9 @@
  * - All-pay auction: everyone pays regardless of outcome
  */
 
-import { BaseStrategy, VoteResult } from './base.js';
-import type { Direction } from '../game-state.js';
+import { BaseStrategy } from './base.js';
+import type { VoteResult, AgentState, VoteAction } from './base.js';
+import type { Direction, HexPos, ParsedGameState, ParsedTeam } from '../game-state.js';
 import {
   HEX_DIRECTIONS,
   OPPOSITE_DIRECTIONS,
@@ -27,8 +28,27 @@ import {
   floodFillSize,
 } from '../game-state.js';
 
+/** Per-team stats computed during analysis */
+interface TeamStat {
+  team: ParsedTeam;
+  ev: number;
+  isCurrentTeam: boolean;
+  bfsDist: number;
+  bfsClosestFruit: HexPos | null;
+}
+
+/** Result of analyzeTeams — describes which team to back and why */
+interface TeamAnalysis {
+  shouldPlay: boolean;
+  recommendedTeam: ParsedTeam | null;
+  bfsDist?: number;
+  bfsClosestFruit?: HexPos | null;
+  reason: string;
+  teamEV: number;
+}
+
 export class ExpectedValueStrategy extends BaseStrategy {
-  constructor(options: Record<string, any> = {}) {
+  constructor(options: Record<string, unknown> = {}) {
     super(
       'expected-value',
       'Maximizes expected value per vote. BFS pathfinding with dead-end avoidance.',
@@ -36,7 +56,7 @@ export class ExpectedValueStrategy extends BaseStrategy {
     );
   }
 
-  computeVote(parsed: any, balance: number, state: any): VoteResult {
+  computeVote(parsed: ParsedGameState, balance: number, state: AgentState): VoteResult {
     if (!this.shouldPlay(parsed, balance, state)) {
       return null;
     }
@@ -47,24 +67,24 @@ export class ExpectedValueStrategy extends BaseStrategy {
       return { skip: true, reason: analysis.reason };
     }
 
-    const targetTeam = analysis.recommendedTeam;
+    const targetTeam = analysis.recommendedTeam!;
     // Use BFS-closest fruit (may differ from hex-closest)
-    const targetFruit = analysis.bfsClosestFruit || targetTeam.closestFruit?.fruit;
+    const targetFruit = analysis.bfsClosestFruit || targetTeam.closestFruit?.fruit || null;
     const fruitDist = analysis.bfsDist ?? targetTeam.closestFruit?.distance ?? '?';
 
     // Score all valid directions
-    const dirScores = parsed.validDirections.map((dir: Direction) => ({
+    const dirScores = parsed.validDirections.map((dir) => ({
       dir,
       score: this.scoreDirection(dir, parsed, targetTeam, targetFruit),
-    })).sort((a: any, b: any) => b.score - a.score);
+    })).sort((a, b) => b.score - a.score);
 
     const bestDir = dirScores[0]?.dir;
     if (!bestDir) return null;
 
     let newDist: number | string = '?';
     if (targetFruit) {
-      const offset = HEX_DIRECTIONS[bestDir as Direction];
-      const newPos = {
+      const offset = HEX_DIRECTIONS[bestDir];
+      const newPos: HexPos = {
         q: parsed.head.q + offset.q,
         r: parsed.head.r + offset.r,
       };
@@ -102,7 +122,7 @@ export class ExpectedValueStrategy extends BaseStrategy {
   /**
    * Counter-bid analysis
    */
-  shouldCounterBid(parsed: any, balance: number, state: any, ourVote: any): VoteResult {
+  shouldCounterBid(parsed: ParsedGameState, balance: number, state: AgentState, ourVote: VoteAction): VoteResult {
     const maxExtensions = this.getOption('maxCounterExtensions', 1);
 
     if (parsed.extensions > maxExtensions) return null;
@@ -127,7 +147,7 @@ export class ExpectedValueStrategy extends BaseStrategy {
     };
   }
 
-  estimateWinProb(team: any, parsed: any): number {
+  estimateWinProb(team: ParsedTeam, parsed: ParsedGameState): number {
     const fruitsNeeded = parsed.fruitsToWin - team.score;
     const fruitDist = team.closestFruit?.distance ?? 10;
 
@@ -142,16 +162,16 @@ export class ExpectedValueStrategy extends BaseStrategy {
     return 0.1;
   }
 
-  analyzeTeams(parsed: any, currentTeamId: string | null): any {
-    const teamStats = parsed.teams
-      .filter((team: any) => team.closestFruit !== null)
-      .map((team: any) => {
+  analyzeTeams(parsed: ParsedGameState, currentTeamId: string | null): TeamAnalysis {
+    const teamStats: TeamStat[] = parsed.teams
+      .filter((team) => team.closestFruit !== null)
+      .map((team) => {
         const isCurrentTeam = team.id === currentTeamId;
 
         // Find BFS-closest fruit across ALL team fruits (not just hex-closest).
         // Uses time-aware BFS (tail segments clear as snake moves).
         let bfsDist = team.closestFruit?.distance ?? Infinity;
-        let bfsClosestFruit = team.closestFruit?.fruit;
+        let bfsClosestFruit: HexPos | null = team.closestFruit?.fruit ?? null;
         const teamFruits = parsed.raw?.apples?.[team.id] || [];
         for (const fruit of teamFruits) {
           const bfs = bfsDistance(parsed.head, fruit, parsed.raw, true, true);
@@ -174,9 +194,9 @@ export class ExpectedValueStrategy extends BaseStrategy {
       };
     }
 
-    teamStats.sort((a: any, b: any) => b.ev - a.ev);
+    teamStats.sort((a, b) => b.ev - a.ev);
 
-    const currentTeam = teamStats.find((t: any) => t.team.id === currentTeamId);
+    const currentTeam = teamStats.find((t) => t.team.id === currentTeamId);
 
     // === Game-theoretic team selection ===
     // Since "last vote wins direction", our individual vote only matters if
@@ -184,7 +204,7 @@ export class ExpectedValueStrategy extends BaseStrategy {
     // backing -- the snake will naturally move toward popular teams' fruits.
 
     // Find the leading team (highest score) and the team with most community support (pool)
-    const leadingTeam = [...teamStats].sort((a: any, b: any) => {
+    const leadingTeam = [...teamStats].sort((a, b) => {
       if (b.team.score !== a.team.score) return b.team.score - a.team.score;
       return (b.team.pool || 0) - (a.team.pool || 0);
     })[0];
@@ -192,15 +212,15 @@ export class ExpectedValueStrategy extends BaseStrategy {
     // The currently winning team for this round (who has momentum right now)
     const currentWinningTeamId = parsed.currentWinningTeam;
     const momentumTeam = currentWinningTeamId
-      ? teamStats.find((t: any) => t.team.id === currentWinningTeamId)
+      ? teamStats.find((t) => t.team.id === currentWinningTeamId)
       : null;
 
     // Early game -- join best team considering score + community + distance
     if (!currentTeamId) {
       // Composite score: heavily weight leading score, then community pool, then proximity
       const ranked = [...teamStats]
-        .filter((t: any) => t.bfsDist < Infinity)
-        .sort((a: any, b: any) => {
+        .filter((t) => t.bfsDist < Infinity)
+        .sort((a, b) => {
           // Primary: score (closer to winning is better)
           const scoreWeight = 100;
           const scoreA = a.team.score * scoreWeight;
@@ -242,7 +262,7 @@ export class ExpectedValueStrategy extends BaseStrategy {
         // Check if another team is about to win and we should bandwagon.
         // Switch when: (a) another team needs just 1 fruit AND is close to it,
         // AND we're behind them in score. Even 1 fruit behind is enough to switch.
-        const aboutToWin = teamStats.find((t: any) =>
+        const aboutToWin = teamStats.find((t) =>
           !t.isCurrentTeam &&
           (parsed.fruitsToWin - t.team.score) === 1 &&
           t.bfsDist <= 2 &&
@@ -262,7 +282,7 @@ export class ExpectedValueStrategy extends BaseStrategy {
 
         // Also bandwagon if another team is dominating (2+ more fruits than us)
         // even if they're not yet 1 away from winning
-        const dominator = teamStats.find((t: any) =>
+        const dominator = teamStats.find((t) =>
           !t.isCurrentTeam &&
           t.team.score > ourScore + 1 &&
           t.bfsDist < Infinity
@@ -290,7 +310,7 @@ export class ExpectedValueStrategy extends BaseStrategy {
       }
 
       // Fruit unreachable -- find best alternative
-      const reachableTeams = teamStats.filter((t: any) => t.bfsDist < Infinity);
+      const reachableTeams = teamStats.filter((t) => t.bfsDist < Infinity);
       if (reachableTeams.length > 0) {
         const best = reachableTeams[0];
         return {
@@ -328,7 +348,7 @@ export class ExpectedValueStrategy extends BaseStrategy {
     };
   }
 
-  calculateExpectedValue(team: any, parsed: any, isCurrentTeam: boolean = false, bfsDist: number | null = null): number {
+  calculateExpectedValue(team: ParsedTeam, parsed: ParsedGameState, isCurrentTeam: boolean = false, bfsDist: number | null = null): number {
     const fruitsNeeded = parsed.fruitsToWin - team.score;
     const dist = bfsDist ?? team.closestFruit?.distance ?? 10;
 
@@ -362,9 +382,9 @@ export class ExpectedValueStrategy extends BaseStrategy {
    * 3. Avoiding wrong-team fruit collisions
    * 4. Safety (exit count from new position)
    */
-  scoreDirection(dir: Direction, parsed: any, targetTeam: any, explicitTargetFruit: any = null): number {
+  scoreDirection(dir: Direction, parsed: ParsedGameState, targetTeam: ParsedTeam, explicitTargetFruit: HexPos | null = null): number {
     const offset = HEX_DIRECTIONS[dir];
-    const newPos = {
+    const newPos: HexPos = {
       q: parsed.head.q + offset.q,
       r: parsed.head.r + offset.r,
     };
@@ -372,7 +392,7 @@ export class ExpectedValueStrategy extends BaseStrategy {
     let score = 0;
 
     // Use BFS-closest fruit if provided, otherwise fall back to hex-closest
-    const targetFruit = explicitTargetFruit || targetTeam.closestFruit?.fruit;
+    const targetFruit = explicitTargetFruit || targetTeam.closestFruit?.fruit || null;
 
     // === Fruit proximity score (BFS-based) ===
     if (targetFruit) {
@@ -430,7 +450,7 @@ export class ExpectedValueStrategy extends BaseStrategy {
 
     // === Safety: flood-fill reachable area ===
     // Larger reachable area = less risk of getting trapped
-    const reachable = floodFillSize(newPos, parsed.raw, OPPOSITE_DIRECTIONS[dir] as Direction);
+    const reachable = floodFillSize(newPos, parsed.raw, OPPOSITE_DIRECTIONS[dir]);
     const totalCells = getTotalCells(parsed.gridRadius);
 
     if (reachable <= 2) {
@@ -445,7 +465,7 @@ export class ExpectedValueStrategy extends BaseStrategy {
     }
 
     // === Exit count bonus (immediate safety) ===
-    const exits = countExits(newPos, parsed.raw, OPPOSITE_DIRECTIONS[dir] as Direction);
+    const exits = countExits(newPos, parsed.raw, OPPOSITE_DIRECTIONS[dir]);
     score += exits * 10;
 
     // === Slight center preference (tiebreaker) ===

@@ -5,6 +5,8 @@
  * No OpenClaw dependencies.
  */
 
+import type { GameState } from './game-state.js';
+
 export interface ApiError extends Error {
   status: number;
   body: string;
@@ -23,7 +25,8 @@ export class SnakeClient {
     this.token = token;
   }
 
-  async request(path: string, options: RequestInit = {}): Promise<any> {
+  /** Low-level HTTP request. Returns parsed JSON. `any` is intentional at the HTTP boundary. */
+  async request(path: string, options: RequestInit = {}): Promise<any> {  // eslint-disable-line @typescript-eslint/no-explicit-any
     const url = `${this.backendUrl}${path}`;
     const res = await fetch(url, {
       ...options,
@@ -47,7 +50,7 @@ export class SnakeClient {
     return res.json();
   }
 
-  async getGameState(): Promise<any> {
+  async getGameState(): Promise<GameState> {
     const result = await this.request('/snake/state');
     return result.gameState || result;
   }
@@ -61,19 +64,19 @@ export class SnakeClient {
     }
   }
 
-  async submitVote(direction: string, team: string, amount: number): Promise<any> {
+  async submitVote(direction: string, team: string, amount: number): Promise<unknown> {
     return this.request('/snake/vote', {
       method: 'POST',
       body: JSON.stringify({ direction, team, amount }),
     });
   }
 
-  async getRodeos(): Promise<any[]> {
+  async getRodeos(): Promise<unknown[]> {
     const result = await this.request('/snake/rodeos');
     return Array.isArray(result) ? result : result.rodeos || [];
   }
 
-  async getUserStatus(): Promise<any> {
+  async getUserStatus(): Promise<unknown> {
     return this.request('/auth/status');
   }
 }
