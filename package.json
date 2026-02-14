@@ -1,18 +1,23 @@
 {
   "name": "snake-rodeo-agents",
-  "version": "1.0.0",
+  "version": "2.0.0",
   "type": "module",
   "description": "Standalone library for playing the Trifle Snake Rodeo game",
-  "main": "index.mjs",
+  "main": "dist/index.js",
+  "types": "dist/index.d.ts",
   "exports": {
-    ".": "./index.mjs",
-    "./lib/*": "./lib/*"
+    ".": {
+      "types": "./dist/index.d.ts",
+      "default": "./dist/index.js"
+    },
+    "./lib/*": "./dist/lib/*"
   },
   "bin": {
-    "snake-rodeo-agents": "./bin/play.mjs"
+    "snake-rodeo-agents": "./dist/bin/play.js"
   },
   "scripts": {
-    "play": "node bin/play.mjs"
+    "build": "tsc",
+    "play": "node dist/bin/play.js"
   },
   "dependencies": {
     "viem": "^2.45.3"
@@ -24,5 +29,9 @@
     "type": "git",
     "url": "https://github.com/trifle-labs/snake-rodeo-agents"
   },
-  "license": "MIT"
+  "license": "MIT",
+  "devDependencies": {
+    "@types/node": "^25.2.3",
+    "typescript": "^5.9.3"
+  }
 }
