@@ -112,6 +112,37 @@ if (user) {
 }
 ```
 
+## Telegram Logging
+
+Optionally send game events (votes, wins, team switches, errors) to a Telegram group.
+
+### CLI
+
+```bash
+npx snake-rodeo-agents --server live \
+  --telegram-token "$TELEGRAM_BOT_TOKEN" \
+  --telegram-chat-id "$TELEGRAM_CHAT_ID"
+```
+
+Both `--telegram-token` and `--telegram-chat-id` must be provided; if either is missing, Telegram logging is silently skipped.
+
+### Library
+
+```javascript
+import { TelegramLogger, formatVote, formatGameEnd } from 'snake-rodeo-agents';
+
+const tg = new TelegramLogger({
+  botToken: process.env.TELEGRAM_BOT_TOKEN,
+  chatId: process.env.TELEGRAM_CHAT_ID,
+});
+
+// Send an arbitrary HTML message
+await tg.send('<b>Hello</b> from the snake agent!');
+
+// Use built-in formatters
+await tg.send(formatGameEnd(winnerTeam, true));
+```
+
 ## Strategies
 
 | Strategy | Description |
@@ -133,6 +164,7 @@ snake-rodeo-agents/
 │   │   ├── client.ts             # API client (SnakeClient)
 │   │   ├── auth.ts               # Wallet SIWE authentication
 │   │   ├── simulator.ts          # Local game simulator for testing
+│   │   ├── telegram.ts           # Optional Telegram logging
 │   │   └── strategies/           # Pluggable strategy modules
 │   │       ├── base.ts           # BaseStrategy, VoteResult types
 │   │       ├── expected-value.ts

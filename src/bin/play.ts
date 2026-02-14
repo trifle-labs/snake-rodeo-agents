@@ -22,6 +22,7 @@ import { parseGameState, getTeamById } from '../lib/game-state.js';
 import type { ParsedGameState } from '../lib/game-state.js';
 import { getStrategy } from '../lib/strategies/index.js';
 import type { VoteAction, AgentState } from '../lib/strategies/base.js';
+import { TelegramLogger, formatVote, formatGameEnd, formatTeamSwitch, formatError } from '../lib/telegram.js';
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const STATE_DIR = join(__dirname, '.state');
@@ -47,6 +48,8 @@ interface RunAgentOptions {
   name?: string;
   pollMs?: number;
   maxRoundBudgetPct?: number;
+  telegramToken?: string;
+  telegramChatId?: string;
 }
 
 function ensureStateDir(): void {
@@ -151,6 +154,12 @@ async function runAgent(options: RunAgentOptions = {}): Promise<void> {
   const client = new SnakeClient(serverUrl, null);
   const strategy = getStrategy(strategyName);
 
+  // Optional Telegram logging
+  const tg = options.telegramToken && options.telegramChatId
+    ? new TelegramLogger({ botToken: options.telegramToken, chatId: options.telegramChatId })
+    : null;
+  if (tg) console.log(`Telegram logging: enabled`);
+
   // Authenticate
   await ensureAuth(client, serverUrl, agentName);
 
@@ -213,6 +222,7 @@ async function runAgent(options: RunAgentOptions = {}): Promise<void> {
         const winnerTeam = getTeamById(parsed, parsed.winner);
         console.log(`\nGame Over! Winner: ${winnerTeam?.emoji || parsed.winner} ${winnerTeam?.name || ''}`);
         console.log(`   ${didWin ? 'WE WON!' : 'We lost.'} (${wins}/${gamesPlayed} wins)`);
+        if (winnerTeam) tg?.send(formatGameEnd(winnerTeam, didWin));
 
         logEvent({
           event: 'game_end',
@@ -274,7 +284,9 @@ async function runAgent(options: RunAgentOptions = {}): Promise<void> {
 
         // voteResult is now narrowed to VoteAction
         if (voteResult.team.id !== currentTeam) {
+          const prevTeam = currentTeam;
           currentTeam = voteResult.team.id;
+          tg?.send(formatTeamSwitch(prevTeam, voteResult.team, voteResult.reason));
         }
 
         try {
@@ -288,6 +300,7 @@ async function runAgent(options: RunAgentOptions = {}): Promise<void> {
           process.stdout.write(
             `R${parsed.round}: ${voteResult.direction}->${voteResult.team.emoji || voteResult.team.id} (${voteResult.reason}) bal:${newBal} `,
           );
+          tg?.send(formatVote(parsed.round!, voteResult.direction, voteResult.team, voteResult.amount, newBal, parsed.teams, voteResult.reason));
         } catch (e: unknown) {
           const msg = e instanceof Error ? e.message : String(e);
           if (!msg.includes('already active')) {
@@ -339,6 +352,7 @@ async function runAgent(options: RunAgentOptions = {}): Promise<void> {
     } catch (e: unknown) {
       const msg = e instanceof Error ? e.message : String(e);
       console.error(`Error: ${msg}`);
+      tg?.send(formatError(msg));
     }
 
     const interval = roundVote ? Math.max(pollMs, 2000) : pollMs;
@@ -358,6 +372,8 @@ async function main(): Promise<void> {
       strategy: { type: 'string', default: 'expected-value' },
       name: { type: 'string', short: 'n', default: 'agent-1' },
       poll: { type: 'string', default: '1000' },
+      'telegram-token': { type: 'string' },
+      'telegram-chat-id': { type: 'string' },
     },
     allowPositionals: true,
   });
@@ -367,6 +383,8 @@ async function main(): Promise<void> {
     strategy: values.strategy,
     name: values.name,
     pollMs: parseInt(values.poll!, 10),
+    telegramToken: values['telegram-token'],
+    telegramChatId: values['telegram-chat-id'],
   });
 }
 

@@ -11,4 +11,6 @@ export { SnakeClient } from './lib/client.js';
 export type { ApiError } from './lib/client.js';
 export { createAndAuthenticate, reauthenticate, authenticateWallet, checkToken, } from './lib/auth.js';
 export type { AuthResult, AuthOptions, AuthUser, } from './lib/auth.js';
+export { TelegramLogger, formatVote, formatGameEnd, formatTeamSwitch, formatError, formatWarning } from './lib/telegram.js';
+export type { TelegramConfig } from './lib/telegram.js';
 //# sourceMappingURL=index.d.ts.map

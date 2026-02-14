@@ -11,4 +11,6 @@ export { getStrategy, listStrategiesWithInfo, BaseStrategy, } from './lib/strate
 export { SnakeClient } from './lib/client.js';
 // Wallet auth
 export { createAndAuthenticate, reauthenticate, authenticateWallet, checkToken, } from './lib/auth.js';
+// Telegram logging (optional)
+export { TelegramLogger, formatVote, formatGameEnd, formatTeamSwitch, formatError, formatWarning } from './lib/telegram.js';
 //# sourceMappingURL=index.js.map

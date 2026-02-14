@@ -67,3 +67,7 @@ export type {
   AuthOptions,
   AuthUser,
 } from './lib/auth.js';
+
+// Telegram logging (optional)
+export { TelegramLogger, formatVote, formatGameEnd, formatTeamSwitch, formatError, formatWarning } from './lib/telegram.js';
+export type { TelegramConfig } from './lib/telegram.js';
