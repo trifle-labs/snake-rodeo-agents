@@ -7,7 +7,7 @@
  * - Willing to enter bidding wars within budget
  */
 import { BaseStrategy } from './base.js';
-import { HEX_DIRECTIONS, OPPOSITE_DIRECTIONS, hexDistance, countExits, } from '../game-state.js';
+import { ALL_DIRECTION_OFFSETS, ALL_OPPOSITES, gridDistance, countExits, } from '../game-state.js';
 export class AggressiveStrategy extends BaseStrategy {
     constructor(options = {}) {
         super('aggressive', 'Backs leaders, counter-bids aggressively. Gets the last word.', options);
@@ -68,14 +68,14 @@ export class AggressiveStrategy extends BaseStrategy {
         let best = null;
         let bestScore = -Infinity;
         for (const dir of parsed.validDirections) {
-            const offset = HEX_DIRECTIONS[dir];
+            const offset = ALL_DIRECTION_OFFSETS[dir];
             const newPos = {
                 q: parsed.head.q + offset.q,
                 r: parsed.head.r + offset.r,
             };
             let score = 0;
             if (targetFruit) {
-                const dist = hexDistance(newPos, targetFruit);
+                const dist = gridDistance(newPos, targetFruit, parsed.gridType);
                 if (dist === 0) {
                     score += 1000;
                 }
@@ -83,7 +83,7 @@ export class AggressiveStrategy extends BaseStrategy {
                     score += (10 - dist) * 10;
                 }
             }
-            const exits = countExits(newPos, parsed.raw, OPPOSITE_DIRECTIONS[dir]);
+            const exits = countExits(newPos, parsed.raw, ALL_OPPOSITES[dir]);
             score += exits * 3;
             if (score > bestScore) {
                 bestScore = score;

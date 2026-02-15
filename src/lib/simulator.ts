@@ -8,20 +8,19 @@
 
 import {
   HEX_DIRECTIONS,
-  OPPOSITE_DIRECTIONS,
-  ALL_DIRECTIONS,
-  hexDistance,
+  CARTESIAN_DIRECTIONS,
+  ALL_DIRECTION_OFFSETS,
   isInBounds,
   isOnSnakeBody,
   getValidDirections,
-  findClosestFruit,
   parseGameState,
-  countExits,
+  getDirectionsForGrid,
 } from './game-state.js';
 
 import type {
   HexPos,
   Direction,
+  GridType,
   ParsedGameState,
 } from './game-state.js';
 
@@ -85,6 +84,7 @@ const TEAM_CONFIG: TeamConfig[] = [
 // Rodeo cycle configs matching the server
 export interface RodeoCycleConfig {
   name: string;
+  gridType?: GridType;
   numberOfTeams: number;
   hexRadius: number;
   fruitsPerTeam: number;
@@ -133,6 +133,45 @@ export const RODEO_CYCLES: RodeoCycleConfig[] = [
     respawn: true,
     simpleBid: true,
   },
+  {
+    name: 'Small Cartesian',
+    gridType: 'cartesian',
+    numberOfTeams: 2,
+    hexRadius: 3,
+    fruitsPerTeam: 1,
+    fruitsToWin: 3,
+    startingBalance: 5,
+    initialMinBid: 1,
+    initialSnakeLength: 1,
+    respawn: true,
+    simpleBid: true,
+  },
+  {
+    name: 'Medium Cartesian',
+    gridType: 'cartesian',
+    numberOfTeams: 3,
+    hexRadius: 4,
+    fruitsPerTeam: 2,
+    fruitsToWin: 3,
+    startingBalance: 10,
+    initialMinBid: 1,
+    initialSnakeLength: 1,
+    respawn: true,
+    simpleBid: true,
+  },
+  {
+    name: 'Large Cartesian',
+    gridType: 'cartesian',
+    numberOfTeams: 4,
+    hexRadius: 5,
+    fruitsPerTeam: 3,
+    fruitsToWin: 4,
+    startingBalance: 15,
+    initialMinBid: 1,
+    initialSnakeLength: 1,
+    respawn: true,
+    simpleBid: true,
+  },
 ];
 
 /** A fruit that was eaten during a game */
@@ -153,7 +192,7 @@ export interface SimGameState {
     currentWinningTeam: string | null;
     currentWinningUser: string | null;
   };
-  gridSize: { type: string; radius: number };
+  gridSize: { type: GridType; radius: number };
   apples: Record<string, HexPos[]>;
   eatenFruits: EatenFruit[];
   fruitScores: Record<string, number>;
@@ -169,6 +208,7 @@ export interface SimGameState {
   minBid: number;
   nonce: number;
   config: {
+    gridType?: GridType;
     hexRadius: number;
     roundDurationSeconds: number;
     newGameDelaySeconds: number;
@@ -246,28 +286,47 @@ function generateFruitPosition(
   existingFruits: HexPos[],
   radius: number,
   rng: RNG = Math.random,
+  gridType: GridType = 'hexagonal',
 ): HexPos {
   let minDistFromCenter: number;
   if (radius === 2) minDistFromCenter = 1;
   else if (radius === 3) minDistFromCenter = 2;
   else minDistFromCenter = Math.floor(radius * 0.5);
 
-  for (let attempts = 0; attempts < 1000; attempts++) {
-    const angle = rng() * 2 * Math.PI;
-    const distance = minDistFromCenter + rng() * (radius - minDistFromCenter);
-    const q = Math.round(distance * Math.cos(angle));
-    const r = Math.round(distance * Math.sin(angle) - q / 2);
+  if (gridType === 'cartesian') {
+    // Cartesian: random q,r in square bounds
+    for (let attempts = 0; attempts < 1000; attempts++) {
+      const q = Math.floor(rng() * (2 * radius + 1)) - radius;
+      const r = Math.floor(rng() * (2 * radius + 1)) - radius;
+      const dist = Math.abs(q) + Math.abs(r);
 
-    if (!isInBounds(q, r, radius)) continue;
-    if (snakeBody.some(seg => seg.q === q && seg.r === r)) continue;
-    if (existingFruits.some(f => f.q === q && f.r === r)) continue;
+      if (!isInBounds(q, r, radius, 'cartesian')) continue;
+      if (dist < minDistFromCenter) continue;
+      if (snakeBody.some(seg => seg.q === q && seg.r === r)) continue;
+      if (existingFruits.some(f => f.q === q && f.r === r)) continue;
 
-    return { q, r };
+      return { q, r };
+    }
+  } else {
+    // Hexagonal: angle-based placement
+    for (let attempts = 0; attempts < 1000; attempts++) {
+      const angle = rng() * 2 * Math.PI;
+      const distance = minDistFromCenter + rng() * (radius - minDistFromCenter);
+      const q = Math.round(distance * Math.cos(angle));
+      const r = Math.round(distance * Math.sin(angle) - q / 2);
+
+      if (!isInBounds(q, r, radius)) continue;
+      if (snakeBody.some(seg => seg.q === q && seg.r === r)) continue;
+      if (existingFruits.some(f => f.q === q && f.r === r)) continue;
+
+      return { q, r };
+    }
   }
+
   // Fallback: find any valid position
   for (let q = -radius; q <= radius; q++) {
     for (let r = -radius; r <= radius; r++) {
-      if (!isInBounds(q, r, radius)) continue;
+      if (!isInBounds(q, r, radius, gridType)) continue;
       if (snakeBody.some(seg => seg.q === q && seg.r === r)) continue;
       if (existingFruits.some(f => f.q === q && f.r === r)) continue;
       return { q, r };
@@ -282,8 +341,10 @@ function generateFruitPosition(
 export function createGameState(config: RodeoCycleConfig, rng: RNG = Math.random): SimGameState {
   const teams = TEAM_CONFIG.slice(0, config.numberOfTeams);
   const radius = config.hexRadius;
+  const gridType: GridType = config.gridType || 'hexagonal';
+  const initialDir: Direction = gridType === 'cartesian' ? 'up' : 'n';
 
-  // Snake starts at center heading north
+  // Snake starts at center
   const body: HexPos[] = [{ q: 0, r: 0 }];
 
   // Generate fruits for each team
@@ -292,7 +353,7 @@ export function createGameState(config: RodeoCycleConfig, rng: RNG = Math.random
   for (const team of teams) {
     apples[team.id] = [];
     for (let i = 0; i < config.fruitsPerTeam; i++) {
-      const fruit = generateFruitPosition(body, allFruits, radius, rng);
+      const fruit = generateFruitPosition(body, allFruits, radius, rng, gridType);
       apples[team.id].push(fruit);
       allFruits.push(fruit);
     }
@@ -309,11 +370,11 @@ export function createGameState(config: RodeoCycleConfig, rng: RNG = Math.random
     id: 1,
     snake: {
       body,
-      currentDirection: 'n',
+      currentDirection: initialDir,
       currentWinningTeam: null,
       currentWinningUser: null,
     },
-    gridSize: { type: 'hexagonal', radius },
+    gridSize: { type: gridType, radius },
     apples,
     eatenFruits: [],
     fruitScores,
@@ -329,6 +390,7 @@ export function createGameState(config: RodeoCycleConfig, rng: RNG = Math.random
     minBid: config.initialMinBid || 1,
     nonce: 0,
     config: {
+      gridType,
       hexRadius: radius,
       roundDurationSeconds: 10,
       newGameDelaySeconds: 20,
@@ -360,16 +422,17 @@ export function advanceRound(
   rng: RNG = Math.random,
 ): AdvanceResult {
   const head = gameState.snake.body[0];
-  const offset = HEX_DIRECTIONS[direction];
+  const offset = ALL_DIRECTION_OFFSETS[direction];
   const newHead: HexPos = {
     q: head.q + offset.q,
     r: head.r + offset.r,
   };
 
   const radius = gameState.gridSize.radius;
+  const gridType = (gameState.gridSize.type || 'hexagonal') as GridType;
 
   // Check collision (boundary or self)
-  if (!isInBounds(newHead.q, newHead.r, radius)) {
+  if (!isInBounds(newHead.q, newHead.r, radius, gridType)) {
     // Invalid move - game over or skip (server prevents this)
     return { gameState, event: 'collision_boundary' };
   }
@@ -422,7 +485,7 @@ export function advanceRound(
     // Respawn fruit if enabled
     if (gameState.config.respawn) {
       const allFruits = Object.values(newApples).flat();
-      const newFruit = generateFruitPosition(newBody, allFruits, radius, rng);
+      const newFruit = generateFruitPosition(newBody, allFruits, radius, rng, gridType);
       newApples[ateTeam!] = [...newApples[ateTeam!], newFruit];
     }
   }
@@ -905,6 +968,7 @@ export function runTournament(
  */
 export function printBoard(gameState: SimGameState): void {
   const radius = gameState.gridSize.radius;
+  const gridType = (gameState.gridSize.type || 'hexagonal') as GridType;
   const head = gameState.snake.body[0];
   const body = gameState.snake.body.slice(1);
 
@@ -919,18 +983,31 @@ export function printBoard(gameState: SimGameState): void {
   }
 
   const lines: string[] = [];
-  for (let r = -radius; r <= radius; r++) {
-    const validQ: number[] = [];
-    for (let q = -radius; q <= radius; q++) {
-      if (isInBounds(q, r, radius)) validQ.push(q);
+  if (gridType === 'cartesian') {
+    // Simple square grid
+    for (let r = -radius; r <= radius; r++) {
+      const row: string[] = [];
+      for (let q = -radius; q <= radius; q++) {
+        const key = `${q},${r}`;
+        row.push(posMap.get(key) || '.');
+      }
+      lines.push(row.join('   '));
     }
-    const maxHexes = 2 * radius + 1;
-    const indent = ' '.repeat((maxHexes - validQ.length) * 2);
-    const row = validQ.map(q => {
-      const key = `${q},${r}`;
-      return posMap.get(key) || '.';
-    }).join('   ');
-    lines.push(indent + row);
+  } else {
+    // Hex grid with staggered indentation
+    for (let r = -radius; r <= radius; r++) {
+      const validQ: number[] = [];
+      for (let q = -radius; q <= radius; q++) {
+        if (isInBounds(q, r, radius)) validQ.push(q);
+      }
+      const maxHexes = 2 * radius + 1;
+      const indent = ' '.repeat((maxHexes - validQ.length) * 2);
+      const row = validQ.map(q => {
+        const key = `${q},${r}`;
+        return posMap.get(key) || '.';
+      }).join('   ');
+      lines.push(indent + row);
+    }
   }
 
   console.log(lines.join('\n'));

@@ -1,13 +1,17 @@
 /**
- * Game state utilities and hex grid helpers
+ * Game state utilities and grid helpers (hex + cartesian)
  */
 export interface HexPos {
     q: number;
     r: number;
 }
-export type Direction = 'n' | 'ne' | 'se' | 's' | 'sw' | 'nw';
+export type HexDirection = 'n' | 'ne' | 'se' | 's' | 'sw' | 'nw';
+export type CartesianDirection = 'up' | 'down' | 'left' | 'right';
+export type Direction = HexDirection | CartesianDirection;
+export type GridType = 'hexagonal' | 'cartesian';
 export interface GridSize {
     radius: number;
+    type?: GridType;
 }
 export interface Snake {
     body: HexPos[];
@@ -45,6 +49,7 @@ export interface GameState {
     config?: {
         initialMinBid?: number;
         fruitsToWin?: number;
+        gridType?: GridType;
         [key: string]: unknown;
     };
     teams?: Team[];
@@ -67,6 +72,7 @@ export interface ParsedGameState {
     extensions: number;
     fruitsToWin: number;
     gridRadius: number;
+    gridType: GridType;
     head: HexPos;
     snakeLength: number;
     currentDirection: Direction | undefined;
@@ -77,13 +83,28 @@ export interface ParsedGameState {
     winner: string | undefined;
     raw: GameState;
 }
-export declare const HEX_DIRECTIONS: Record<Direction, HexPos>;
-export declare const OPPOSITE_DIRECTIONS: Record<Direction, Direction>;
-export declare const ALL_DIRECTIONS: Direction[];
+export declare const HEX_DIRECTIONS: Record<HexDirection, HexPos>;
+export declare const OPPOSITE_DIRECTIONS: Record<HexDirection, HexDirection>;
+export declare const ALL_DIRECTIONS: HexDirection[];
+export declare const CARTESIAN_DIRECTIONS: Record<CartesianDirection, HexPos>;
+export declare const CARTESIAN_OPPOSITES: Record<CartesianDirection, CartesianDirection>;
+export declare const ALL_CARTESIAN_DIRECTIONS: CartesianDirection[];
+export declare const ALL_DIRECTION_OFFSETS: Record<Direction, HexPos>;
+export declare const ALL_OPPOSITES: Record<Direction, Direction>;
 /**
- * Check if coordinates are within hex grid bounds
+ * Get the direction entries for a grid type
  */
-export declare function isInBounds(q: number, r: number, radius: number): boolean;
+export declare function getDirectionsForGrid(gridType: GridType): [Direction, HexPos][];
+/**
+ * Detect grid type from a GameState
+ */
+export declare function detectGridType(gameState: GameState): GridType;
+/**
+ * Check if coordinates are within grid bounds.
+ * Hex: |q| <= r, |r| <= r, |q+r| <= r
+ * Cartesian: |q| <= r, |r| <= r
+ */
+export declare function isInBounds(q: number, r: number, radius: number, gridType?: GridType): boolean;
 /**
  * Check if a position is on the snake body
  */
@@ -95,17 +116,29 @@ export declare function isOnSnakeBody(q: number, r: number, snakeBody: HexPos[])
  */
 export declare function hexDistance(a: HexPos, b: HexPos): number;
 /**
+ * Calculate Manhattan distance between two points (for cartesian grids)
+ */
+export declare function manhattanDistance(a: HexPos, b: HexPos): number;
+/**
+ * Calculate distance using the appropriate metric for the grid type
+ */
+export declare function gridDistance(a: HexPos, b: HexPos, gridType?: GridType): number;
+/**
+ * Get total cells for a grid
+ */
+export declare function getTotalCells(radius: number, gridType?: GridType): number;
+/**
  * Get all valid directions the snake can move
  */
 export declare function getValidDirections(gameState: GameState): Direction[];
 /**
  * Find the closest fruit for a team
  */
-export declare function findClosestFruit(head: HexPos, fruits: Record<string, HexPos[]>, teamId: string): ClosestFruitResult | null;
+export declare function findClosestFruit(head: HexPos, fruits: Record<string, HexPos[]>, teamId: string, gridType?: GridType): ClosestFruitResult | null;
 /**
  * Get the best direction toward a target
  */
-export declare function bestDirectionToward(head: HexPos, target: HexPos, validDirs: Direction[]): Direction | null;
+export declare function bestDirectionToward(head: HexPos, target: HexPos, validDirs: Direction[], gridType?: GridType): Direction | null;
 /**
  * Count exits from a position (safety metric)
  */

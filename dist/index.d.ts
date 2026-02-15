@@ -3,8 +3,8 @@
  *
  * Exports game state utilities, strategies, API client, and wallet auth.
  */
-export { HEX_DIRECTIONS, OPPOSITE_DIRECTIONS, ALL_DIRECTIONS, isInBounds, isOnSnakeBody, hexDistance, getValidDirections, findClosestFruit, bestDirectionToward, countExits, ROUND_TIMING, parseGameState, getTeamById, bfsDistance, floodFillSize, } from './lib/game-state.js';
-export type { HexPos, Direction, GridSize, Snake, Team, ParsedTeam, ClosestFruitResult, BfsResult, GameState, ParsedGameState, } from './lib/game-state.js';
+export { HEX_DIRECTIONS, OPPOSITE_DIRECTIONS, ALL_DIRECTIONS, CARTESIAN_DIRECTIONS, CARTESIAN_OPPOSITES, ALL_CARTESIAN_DIRECTIONS, ALL_DIRECTION_OFFSETS, ALL_OPPOSITES, getDirectionsForGrid, detectGridType, isInBounds, isOnSnakeBody, hexDistance, manhattanDistance, gridDistance, getTotalCells, getValidDirections, findClosestFruit, bestDirectionToward, countExits, ROUND_TIMING, parseGameState, getTeamById, bfsDistance, floodFillSize, } from './lib/game-state.js';
+export type { HexPos, HexDirection, CartesianDirection, Direction, GridType, GridSize, Snake, Team, ParsedTeam, ClosestFruitResult, BfsResult, GameState, ParsedGameState, } from './lib/game-state.js';
 export { getStrategy, listStrategiesWithInfo, BaseStrategy, } from './lib/strategies/index.js';
 export type { VoteResult, VoteAction, VoteSkip, AgentState, } from './lib/strategies/base.js';
 export { SnakeClient } from './lib/client.js';

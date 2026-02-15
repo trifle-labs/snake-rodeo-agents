@@ -20,9 +20,10 @@ import { BaseStrategy } from './base.js';
 import type { VoteResult, AgentState, VoteAction } from './base.js';
 import type { Direction, HexPos, ParsedGameState, ParsedTeam } from '../game-state.js';
 import {
-  HEX_DIRECTIONS,
-  OPPOSITE_DIRECTIONS,
-  hexDistance,
+  ALL_DIRECTION_OFFSETS,
+  ALL_OPPOSITES,
+  gridDistance,
+  getTotalCells,
   countExits,
   bfsDistance,
   floodFillSize,
@@ -83,12 +84,12 @@ export class ExpectedValueStrategy extends BaseStrategy {
 
     let newDist: number | string = '?';
     if (targetFruit) {
-      const offset = HEX_DIRECTIONS[bestDir];
+      const offset = ALL_DIRECTION_OFFSETS[bestDir];
       const newPos: HexPos = {
         q: parsed.head.q + offset.q,
         r: parsed.head.r + offset.r,
       };
-      newDist = hexDistance(newPos, targetFruit);
+      newDist = gridDistance(newPos, targetFruit, parsed.gridType);
     }
 
     // === Vote efficiency (v3 — multi-agent aware) ===
@@ -301,7 +302,7 @@ export class ExpectedValueStrategy extends BaseStrategy {
    * 4. Safety (exit count from new position)
    */
   scoreDirection(dir: Direction, parsed: ParsedGameState, targetTeam: ParsedTeam, explicitTargetFruit: HexPos | null = null): number {
-    const offset = HEX_DIRECTIONS[dir];
+    const offset = ALL_DIRECTION_OFFSETS[dir];
     const newPos: HexPos = {
       q: parsed.head.q + offset.q,
       r: parsed.head.r + offset.r,
@@ -314,7 +315,7 @@ export class ExpectedValueStrategy extends BaseStrategy {
 
     // === Fruit proximity score (BFS-based) ===
     if (targetFruit) {
-      const dist = hexDistance(newPos, targetFruit);
+      const dist = gridDistance(newPos, targetFruit, parsed.gridType);
 
       if (dist === 0) {
         // Eating the fruit! Huge bonus.
@@ -339,12 +340,12 @@ export class ExpectedValueStrategy extends BaseStrategy {
 
     // === Opportunistic: check if ANY reachable fruit is close ===
     // Even if it's not our target, being near fruit means flexibility
-    if (!targetFruit || hexDistance(newPos, targetFruit) > 3) {
+    if (!targetFruit || gridDistance(newPos, targetFruit, parsed.gridType) > 3) {
       for (const team of parsed.teams) {
         const teamFruits = parsed.raw?.apples?.[team.id] || [];
         for (const fruit of teamFruits) {
           if (fruit.q === newPos.q && fruit.r === newPos.r) continue; // handled above
-          const d = hexDistance(newPos, fruit);
+          const d = gridDistance(newPos, fruit, parsed.gridType);
           if (d <= 2) {
             // Being near ANY fruit gives a small flexibility bonus
             score += (3 - d) * 10;
@@ -368,8 +369,8 @@ export class ExpectedValueStrategy extends BaseStrategy {
 
     // === Safety: flood-fill reachable area ===
     // Larger reachable area = less risk of getting trapped
-    const reachable = floodFillSize(newPos, parsed.raw, OPPOSITE_DIRECTIONS[dir]);
-    const totalCells = getTotalCells(parsed.gridRadius);
+    const reachable = floodFillSize(newPos, parsed.raw, ALL_OPPOSITES[dir]);
+    const totalCells = getTotalCells(parsed.gridRadius, parsed.gridType);
 
     if (reachable <= 2) {
       // Dead end or near dead end -- very dangerous
@@ -383,21 +384,13 @@ export class ExpectedValueStrategy extends BaseStrategy {
     }
 
     // === Exit count bonus (immediate safety) ===
-    const exits = countExits(newPos, parsed.raw, OPPOSITE_DIRECTIONS[dir]);
+    const exits = countExits(newPos, parsed.raw, ALL_OPPOSITES[dir]);
     score += exits * 10;
 
     // === Slight center preference (tiebreaker) ===
-    const distFromCenter = hexDistance(newPos, { q: 0, r: 0 });
+    const distFromCenter = gridDistance(newPos, { q: 0, r: 0 }, parsed.gridType);
     score += (parsed.gridRadius - distFromCenter) * 2;
 
     return score;
   }
-}
-
-/**
- * Total cells in a hex grid of given radius
- */
-function getTotalCells(radius: number): number {
-  // 1 + 6 + 12 + ... = 3*r*(r+1) + 1
-  return 3 * radius * (radius + 1) + 1;
 }

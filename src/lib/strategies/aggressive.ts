@@ -11,9 +11,9 @@ import { BaseStrategy } from './base.js';
 import type { VoteResult, AgentState, VoteAction } from './base.js';
 import type { Direction, HexPos, ParsedGameState, ParsedTeam } from '../game-state.js';
 import {
-  HEX_DIRECTIONS,
-  OPPOSITE_DIRECTIONS,
-  hexDistance,
+  ALL_DIRECTION_OFFSETS,
+  ALL_OPPOSITES,
+  gridDistance,
   countExits,
 } from '../game-state.js';
 
@@ -91,7 +91,7 @@ export class AggressiveStrategy extends BaseStrategy {
     let bestScore = -Infinity;
 
     for (const dir of parsed.validDirections) {
-      const offset = HEX_DIRECTIONS[dir];
+      const offset = ALL_DIRECTION_OFFSETS[dir];
       const newPos: HexPos = {
         q: parsed.head.q + offset.q,
         r: parsed.head.r + offset.r,
@@ -100,7 +100,7 @@ export class AggressiveStrategy extends BaseStrategy {
       let score = 0;
 
       if (targetFruit) {
-        const dist = hexDistance(newPos, targetFruit);
+        const dist = gridDistance(newPos, targetFruit, parsed.gridType);
         if (dist === 0) {
           score += 1000;
         } else {
@@ -108,7 +108,7 @@ export class AggressiveStrategy extends BaseStrategy {
         }
       }
 
-      const exits = countExits(newPos, parsed.raw, OPPOSITE_DIRECTIONS[dir]);
+      const exits = countExits(newPos, parsed.raw, ALL_OPPOSITES[dir]);
       score += exits * 3;
 
       if (score > bestScore) {

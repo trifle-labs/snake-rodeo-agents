@@ -7,7 +7,7 @@
  * - Good for building ball balance over time
  */
 import { BaseStrategy } from './base.js';
-import { HEX_DIRECTIONS, OPPOSITE_DIRECTIONS, hexDistance, countExits, } from '../game-state.js';
+import { ALL_DIRECTION_OFFSETS, ALL_OPPOSITES, gridDistance, countExits, } from '../game-state.js';
 export class UnderdogStrategy extends BaseStrategy {
     constructor(options = {}) {
         super('underdog', 'Backs teams with small pools for bigger payouts.', options);
@@ -72,7 +72,7 @@ export class UnderdogStrategy extends BaseStrategy {
         let best = null;
         let bestScore = -Infinity;
         for (const dir of parsed.validDirections) {
-            const offset = HEX_DIRECTIONS[dir];
+            const offset = ALL_DIRECTION_OFFSETS[dir];
             const newPos = {
                 q: parsed.head.q + offset.q,
                 r: parsed.head.r + offset.r,
@@ -80,11 +80,11 @@ export class UnderdogStrategy extends BaseStrategy {
             let score = 0;
             // Distance to target
             if (targetFruit) {
-                const dist = hexDistance(newPos, targetFruit);
+                const dist = gridDistance(newPos, targetFruit, parsed.gridType);
                 score += (10 - dist) * 5;
             }
             // Safety
-            const exits = countExits(newPos, parsed.raw, OPPOSITE_DIRECTIONS[dir]);
+            const exits = countExits(newPos, parsed.raw, ALL_OPPOSITES[dir]);
             score += exits * 8;
             if (score > bestScore) {
                 bestScore = score;

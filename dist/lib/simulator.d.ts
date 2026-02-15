@@ -5,7 +5,7 @@
  * Multiple AI agents compete by voting on directions each round.
  * The simulator resolves votes and advances the game state.
  */
-import type { HexPos, Direction, ParsedGameState } from './game-state.js';
+import type { HexPos, Direction, GridType, ParsedGameState } from './game-state.js';
 import type { VoteResult, VoteAction, AgentState } from './strategies/base.js';
 /** A function that returns a pseudo-random number in [0, 1) */
 export type RNG = () => number;
@@ -29,6 +29,7 @@ interface TeamConfig {
 }
 export interface RodeoCycleConfig {
     name: string;
+    gridType?: GridType;
     numberOfTeams: number;
     hexRadius: number;
     fruitsPerTeam: number;
@@ -58,7 +59,7 @@ export interface SimGameState {
         currentWinningUser: string | null;
     };
     gridSize: {
-        type: string;
+        type: GridType;
         radius: number;
     };
     apples: Record<string, HexPos[]>;
@@ -76,6 +77,7 @@ export interface SimGameState {
     minBid: number;
     nonce: number;
     config: {
+        gridType?: GridType;
         hexRadius: number;
         roundDurationSeconds: number;
         newGameDelaySeconds: number;

@@ -11,9 +11,9 @@ import { BaseStrategy } from './base.js';
 import type { VoteResult, AgentState } from './base.js';
 import type { Direction, HexPos, ParsedGameState } from '../game-state.js';
 import {
-  HEX_DIRECTIONS,
-  OPPOSITE_DIRECTIONS,
-  hexDistance,
+  ALL_DIRECTION_OFFSETS,
+  ALL_OPPOSITES,
+  gridDistance,
   countExits,
 } from '../game-state.js';
 
@@ -95,19 +95,19 @@ export class ConservativeStrategy extends BaseStrategy {
     let bestScore = -Infinity;
 
     for (const dir of parsed.validDirections) {
-      const offset = HEX_DIRECTIONS[dir];
+      const offset = ALL_DIRECTION_OFFSETS[dir];
       const newPos: HexPos = {
         q: parsed.head.q + offset.q,
         r: parsed.head.r + offset.r,
       };
 
       // Safety is weighted heavily
-      const safety = countExits(newPos, parsed.raw, OPPOSITE_DIRECTIONS[dir]);
+      const safety = countExits(newPos, parsed.raw, ALL_OPPOSITES[dir]);
       let score = safety * 15;
 
       // Bonus for moving toward target
       if (targetFruit) {
-        const dist = hexDistance(newPos, targetFruit);
+        const dist = gridDistance(newPos, targetFruit, parsed.gridType);
         score += (10 - dist) * 3;
       }
 

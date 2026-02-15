@@ -4,7 +4,7 @@
  * Exports game state utilities, strategies, API client, and wallet auth.
  */
 // Game state utilities
-export { HEX_DIRECTIONS, OPPOSITE_DIRECTIONS, ALL_DIRECTIONS, isInBounds, isOnSnakeBody, hexDistance, getValidDirections, findClosestFruit, bestDirectionToward, countExits, ROUND_TIMING, parseGameState, getTeamById, bfsDistance, floodFillSize, } from './lib/game-state.js';
+export { HEX_DIRECTIONS, OPPOSITE_DIRECTIONS, ALL_DIRECTIONS, CARTESIAN_DIRECTIONS, CARTESIAN_OPPOSITES, ALL_CARTESIAN_DIRECTIONS, ALL_DIRECTION_OFFSETS, ALL_OPPOSITES, getDirectionsForGrid, detectGridType, isInBounds, isOnSnakeBody, hexDistance, manhattanDistance, gridDistance, getTotalCells, getValidDirections, findClosestFruit, bestDirectionToward, countExits, ROUND_TIMING, parseGameState, getTeamById, bfsDistance, floodFillSize, } from './lib/game-state.js';
 // Strategies
 export { getStrategy, listStrategiesWithInfo, BaseStrategy, } from './lib/strategies/index.js';
 // API client

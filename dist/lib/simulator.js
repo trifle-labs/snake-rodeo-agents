@@ -5,7 +5,7 @@
  * Multiple AI agents compete by voting on directions each round.
  * The simulator resolves votes and advances the game state.
  */
-import { HEX_DIRECTIONS, isInBounds, getValidDirections, parseGameState, } from './game-state.js';
+import { ALL_DIRECTION_OFFSETS, isInBounds, getValidDirections, parseGameState, } from './game-state.js';
 /**
  * mulberry32 — fast, high-quality 32-bit PRNG.
  * Returns a function producing values in [0, 1).
@@ -81,11 +81,50 @@ export const RODEO_CYCLES = [
         respawn: true,
         simpleBid: true,
     },
+    {
+        name: 'Small Cartesian',
+        gridType: 'cartesian',
+        numberOfTeams: 2,
+        hexRadius: 3,
+        fruitsPerTeam: 1,
+        fruitsToWin: 3,
+        startingBalance: 5,
+        initialMinBid: 1,
+        initialSnakeLength: 1,
+        respawn: true,
+        simpleBid: true,
+    },
+    {
+        name: 'Medium Cartesian',
+        gridType: 'cartesian',
+        numberOfTeams: 3,
+        hexRadius: 4,
+        fruitsPerTeam: 2,
+        fruitsToWin: 3,
+        startingBalance: 10,
+        initialMinBid: 1,
+        initialSnakeLength: 1,
+        respawn: true,
+        simpleBid: true,
+    },
+    {
+        name: 'Large Cartesian',
+        gridType: 'cartesian',
+        numberOfTeams: 4,
+        hexRadius: 5,
+        fruitsPerTeam: 3,
+        fruitsToWin: 4,
+        startingBalance: 15,
+        initialMinBid: 1,
+        initialSnakeLength: 1,
+        respawn: true,
+        simpleBid: true,
+    },
 ];
 /**
  * Generate a random fruit position avoiding snake body and existing fruits
  */
-function generateFruitPosition(snakeBody, existingFruits, radius, rng = Math.random) {
+function generateFruitPosition(snakeBody, existingFruits, radius, rng = Math.random, gridType = 'hexagonal') {
     let minDistFromCenter;
     if (radius === 2)
         minDistFromCenter = 1;
@@ -93,23 +132,43 @@ function generateFruitPosition(snakeBody, existingFruits, radius, rng = Math.ran
         minDistFromCenter = 2;
     else
         minDistFromCenter = Math.floor(radius * 0.5);
-    for (let attempts = 0; attempts < 1000; attempts++) {
-        const angle = rng() * 2 * Math.PI;
-        const distance = minDistFromCenter + rng() * (radius - minDistFromCenter);
-        const q = Math.round(distance * Math.cos(angle));
-        const r = Math.round(distance * Math.sin(angle) - q / 2);
-        if (!isInBounds(q, r, radius))
-            continue;
-        if (snakeBody.some(seg => seg.q === q && seg.r === r))
-            continue;
-        if (existingFruits.some(f => f.q === q && f.r === r))
-            continue;
-        return { q, r };
+    if (gridType === 'cartesian') {
+        // Cartesian: random q,r in square bounds
+        for (let attempts = 0; attempts < 1000; attempts++) {
+            const q = Math.floor(rng() * (2 * radius + 1)) - radius;
+            const r = Math.floor(rng() * (2 * radius + 1)) - radius;
+            const dist = Math.abs(q) + Math.abs(r);
+            if (!isInBounds(q, r, radius, 'cartesian'))
+                continue;
+            if (dist < minDistFromCenter)
+                continue;
+            if (snakeBody.some(seg => seg.q === q && seg.r === r))
+                continue;
+            if (existingFruits.some(f => f.q === q && f.r === r))
+                continue;
+            return { q, r };
+        }
+    }
+    else {
+        // Hexagonal: angle-based placement
+        for (let attempts = 0; attempts < 1000; attempts++) {
+            const angle = rng() * 2 * Math.PI;
+            const distance = minDistFromCenter + rng() * (radius - minDistFromCenter);
+            const q = Math.round(distance * Math.cos(angle));
+            const r = Math.round(distance * Math.sin(angle) - q / 2);
+            if (!isInBounds(q, r, radius))
+                continue;
+            if (snakeBody.some(seg => seg.q === q && seg.r === r))
+                continue;
+            if (existingFruits.some(f => f.q === q && f.r === r))
+                continue;
+            return { q, r };
+        }
     }
     // Fallback: find any valid position
     for (let q = -radius; q <= radius; q++) {
         for (let r = -radius; r <= radius; r++) {
-            if (!isInBounds(q, r, radius))
+            if (!isInBounds(q, r, radius, gridType))
                 continue;
             if (snakeBody.some(seg => seg.q === q && seg.r === r))
                 continue;
@@ -126,7 +185,9 @@ function generateFruitPosition(snakeBody, existingFruits, radius, rng = Math.ran
 export function createGameState(config, rng = Math.random) {
     const teams = TEAM_CONFIG.slice(0, config.numberOfTeams);
     const radius = config.hexRadius;
-    // Snake starts at center heading north
+    const gridType = config.gridType || 'hexagonal';
+    const initialDir = gridType === 'cartesian' ? 'up' : 'n';
+    // Snake starts at center
     const body = [{ q: 0, r: 0 }];
     // Generate fruits for each team
     const apples = {};
@@ -134,7 +195,7 @@ export function createGameState(config, rng = Math.random) {
     for (const team of teams) {
         apples[team.id] = [];
         for (let i = 0; i < config.fruitsPerTeam; i++) {
-            const fruit = generateFruitPosition(body, allFruits, radius, rng);
+            const fruit = generateFruitPosition(body, allFruits, radius, rng, gridType);
             apples[team.id].push(fruit);
             allFruits.push(fruit);
         }
@@ -149,11 +210,11 @@ export function createGameState(config, rng = Math.random) {
         id: 1,
         snake: {
             body,
-            currentDirection: 'n',
+            currentDirection: initialDir,
             currentWinningTeam: null,
             currentWinningUser: null,
         },
-        gridSize: { type: 'hexagonal', radius },
+        gridSize: { type: gridType, radius },
         apples,
         eatenFruits: [],
         fruitScores,
@@ -169,6 +230,7 @@ export function createGameState(config, rng = Math.random) {
         minBid: config.initialMinBid || 1,
         nonce: 0,
         config: {
+            gridType,
             hexRadius: radius,
             roundDurationSeconds: 10,
             newGameDelaySeconds: 20,
@@ -194,14 +256,15 @@ export function createGameState(config, rng = Math.random) {
  */
 export function advanceRound(gameState, direction, winningTeamId, rng = Math.random) {
     const head = gameState.snake.body[0];
-    const offset = HEX_DIRECTIONS[direction];
+    const offset = ALL_DIRECTION_OFFSETS[direction];
     const newHead = {
         q: head.q + offset.q,
         r: head.r + offset.r,
     };
     const radius = gameState.gridSize.radius;
+    const gridType = (gameState.gridSize.type || 'hexagonal');
     // Check collision (boundary or self)
-    if (!isInBounds(newHead.q, newHead.r, radius)) {
+    if (!isInBounds(newHead.q, newHead.r, radius, gridType)) {
         // Invalid move - game over or skip (server prevents this)
         return { gameState, event: 'collision_boundary' };
     }
@@ -245,7 +308,7 @@ export function advanceRound(gameState, direction, winningTeamId, rng = Math.ran
         // Respawn fruit if enabled
         if (gameState.config.respawn) {
             const allFruits = Object.values(newApples).flat();
-            const newFruit = generateFruitPosition(newBody, allFruits, radius, rng);
+            const newFruit = generateFruitPosition(newBody, allFruits, radius, rng, gridType);
             newApples[ateTeam] = [...newApples[ateTeam], newFruit];
         }
     }
@@ -658,6 +721,7 @@ export function runTournament(agents, configs, numGamesPerConfig = 50, options =
  */
 export function printBoard(gameState) {
     const radius = gameState.gridSize.radius;
+    const gridType = (gameState.gridSize.type || 'hexagonal');
     const head = gameState.snake.body[0];
     const body = gameState.snake.body.slice(1);
     const posMap = new Map();
@@ -672,19 +736,33 @@ export function printBoard(gameState) {
         }
     }
     const lines = [];
-    for (let r = -radius; r <= radius; r++) {
-        const validQ = [];
-        for (let q = -radius; q <= radius; q++) {
-            if (isInBounds(q, r, radius))
-                validQ.push(q);
+    if (gridType === 'cartesian') {
+        // Simple square grid
+        for (let r = -radius; r <= radius; r++) {
+            const row = [];
+            for (let q = -radius; q <= radius; q++) {
+                const key = `${q},${r}`;
+                row.push(posMap.get(key) || '.');
+            }
+            lines.push(row.join('   '));
         }
-        const maxHexes = 2 * radius + 1;
-        const indent = ' '.repeat((maxHexes - validQ.length) * 2);
-        const row = validQ.map(q => {
-            const key = `${q},${r}`;
-            return posMap.get(key) || '.';
-        }).join('   ');
-        lines.push(indent + row);
+    }
+    else {
+        // Hex grid with staggered indentation
+        for (let r = -radius; r <= radius; r++) {
+            const validQ = [];
+            for (let q = -radius; q <= radius; q++) {
+                if (isInBounds(q, r, radius))
+                    validQ.push(q);
+            }
+            const maxHexes = 2 * radius + 1;
+            const indent = ' '.repeat((maxHexes - validQ.length) * 2);
+            const row = validQ.map(q => {
+                const key = `${q},${r}`;
+                return posMap.get(key) || '.';
+            }).join('   ');
+            lines.push(indent + row);
+        }
     }
     console.log(lines.join('\n'));
     console.log(`Dir: ${gameState.snake.currentDirection} | Round: ${gameState.round} | Scores: ${JSON.stringify(gameState.fruitScores)}`);

@@ -1,5 +1,5 @@
 /**
- * Game state utilities and hex grid helpers
+ * Game state utilities and grid helpers (hex + cartesian)
  */
 // ---------------------------------------------------------------------------
 // Constants
@@ -19,13 +19,54 @@ export const OPPOSITE_DIRECTIONS = {
     se: 'nw', nw: 'se',
 };
 export const ALL_DIRECTIONS = Object.keys(HEX_DIRECTIONS);
+// Cartesian directions and their offsets (square grid, q=x r=y)
+export const CARTESIAN_DIRECTIONS = {
+    up: { q: 0, r: -1 },
+    down: { q: 0, r: 1 },
+    left: { q: -1, r: 0 },
+    right: { q: 1, r: 0 },
+};
+export const CARTESIAN_OPPOSITES = {
+    up: 'down', down: 'up',
+    left: 'right', right: 'left',
+};
+export const ALL_CARTESIAN_DIRECTIONS = Object.keys(CARTESIAN_DIRECTIONS);
+// Combined maps for direction lookups (works with any direction type)
+export const ALL_DIRECTION_OFFSETS = {
+    ...HEX_DIRECTIONS,
+    ...CARTESIAN_DIRECTIONS,
+};
+export const ALL_OPPOSITES = {
+    ...OPPOSITE_DIRECTIONS,
+    ...CARTESIAN_OPPOSITES,
+};
+/**
+ * Get the direction entries for a grid type
+ */
+export function getDirectionsForGrid(gridType) {
+    if (gridType === 'cartesian') {
+        return Object.entries(CARTESIAN_DIRECTIONS);
+    }
+    return Object.entries(HEX_DIRECTIONS);
+}
+/**
+ * Detect grid type from a GameState
+ */
+export function detectGridType(gameState) {
+    return gameState?.gridSize?.type || gameState?.config?.gridType || 'hexagonal';
+}
 // ---------------------------------------------------------------------------
 // Helpers
 // ---------------------------------------------------------------------------
 /**
- * Check if coordinates are within hex grid bounds
+ * Check if coordinates are within grid bounds.
+ * Hex: |q| <= r, |r| <= r, |q+r| <= r
+ * Cartesian: |q| <= r, |r| <= r
  */
-export function isInBounds(q, r, radius) {
+export function isInBounds(q, r, radius, gridType = 'hexagonal') {
+    if (gridType === 'cartesian') {
+        return Math.abs(q) <= radius && Math.abs(r) <= radius;
+    }
     return Math.abs(q) <= radius && Math.abs(r) <= radius && Math.abs(q + r) <= radius;
 }
 /**
@@ -42,9 +83,28 @@ export function isOnSnakeBody(q, r, snakeBody) {
 export function hexDistance(a, b) {
     const dq = a.q - b.q;
     const dr = a.r - b.r;
-    // In cube coordinates: dz = -dq - dr
-    // Distance is max(|dx|, |dy|, |dz|) = max(|dq|, |dr|, |dq + dr|)
     return Math.max(Math.abs(dq), Math.abs(dr), Math.abs(dq + dr));
+}
+/**
+ * Calculate Manhattan distance between two points (for cartesian grids)
+ */
+export function manhattanDistance(a, b) {
+    return Math.abs(a.q - b.q) + Math.abs(a.r - b.r);
+}
+/**
+ * Calculate distance using the appropriate metric for the grid type
+ */
+export function gridDistance(a, b, gridType = 'hexagonal') {
+    return gridType === 'cartesian' ? manhattanDistance(a, b) : hexDistance(a, b);
+}
+/**
+ * Get total cells for a grid
+ */
+export function getTotalCells(radius, gridType = 'hexagonal') {
+    if (gridType === 'cartesian') {
+        return (2 * radius + 1) ** 2;
+    }
+    return 3 * radius * (radius + 1) + 1;
 }
 /**
  * Get all valid directions the snake can move
@@ -54,14 +114,13 @@ export function getValidDirections(gameState) {
         return [];
     const head = gameState.snake.body[0];
     const radius = gameState.gridSize?.radius || 3;
+    const gridType = detectGridType(gameState);
     const valid = [];
-    for (const [dir, offset] of Object.entries(HEX_DIRECTIONS)) {
+    for (const [dir, offset] of getDirectionsForGrid(gridType)) {
         const newQ = head.q + offset.q;
         const newR = head.r + offset.r;
-        // Check bounds
-        if (!isInBounds(newQ, newR, radius))
+        if (!isInBounds(newQ, newR, radius, gridType))
             continue;
-        // Check self-collision (skip head, check rest of body)
         if (isOnSnakeBody(newQ, newR, gameState.snake.body.slice(1)))
             continue;
         valid.push(dir);
@@ -71,14 +130,14 @@ export function getValidDirections(gameState) {
 /**
  * Find the closest fruit for a team
  */
-export function findClosestFruit(head, fruits, teamId) {
+export function findClosestFruit(head, fruits, teamId, gridType = 'hexagonal') {
     const teamFruits = fruits[teamId] || [];
     if (teamFruits.length === 0)
         return null;
     let closest = null;
     let minDist = Infinity;
     for (const fruit of teamFruits) {
-        const dist = hexDistance(head, fruit);
+        const dist = gridDistance(head, fruit, gridType);
         if (dist < minDist) {
             minDist = dist;
             closest = fruit;
@@ -89,13 +148,13 @@ export function findClosestFruit(head, fruits, teamId) {
 /**
  * Get the best direction toward a target
  */
-export function bestDirectionToward(head, target, validDirs) {
+export function bestDirectionToward(head, target, validDirs, gridType = 'hexagonal') {
     let bestDir = null;
     let bestDist = Infinity;
     for (const dir of validDirs) {
-        const offset = HEX_DIRECTIONS[dir];
+        const offset = ALL_DIRECTION_OFFSETS[dir];
         const newPos = { q: head.q + offset.q, r: head.r + offset.r };
-        const dist = hexDistance(newPos, target);
+        const dist = gridDistance(newPos, target, gridType);
         if (dist < bestDist) {
             bestDist = dist;
             bestDir = dir;
@@ -108,14 +167,15 @@ export function bestDirectionToward(head, target, validDirs) {
  */
 export function countExits(pos, gameState, excludeDir = null) {
     const radius = gameState.gridSize?.radius || 3;
+    const gridType = detectGridType(gameState);
     const snakeBody = gameState.snake?.body || [];
     let exits = 0;
-    for (const [dir, offset] of Object.entries(HEX_DIRECTIONS)) {
+    for (const [dir, offset] of getDirectionsForGrid(gridType)) {
         if (excludeDir && dir === excludeDir)
             continue;
         const newQ = pos.q + offset.q;
         const newR = pos.r + offset.r;
-        if (!isInBounds(newQ, newR, radius))
+        if (!isInBounds(newQ, newR, radius, gridType))
             continue;
         if (isOnSnakeBody(newQ, newR, snakeBody))
             continue;
@@ -145,11 +205,12 @@ export function parseGameState(gs) {
     const head = gs.snake?.body?.[0];
     if (!head)
         return null;
+    const gridType = gs.gridSize?.type || gs.config?.gridType || 'hexagonal';
     const teams = (gs.teams || []).map((team) => ({
         ...team,
         score: gs.fruitScores?.[team.id] || 0,
         pool: gs.teamPools?.[team.id] || 0,
-        closestFruit: findClosestFruit(head, gs.apples || {}, team.id),
+        closestFruit: findClosestFruit(head, gs.apples || {}, team.id, gridType),
     }));
     const countdown = gs.countdown ?? ROUND_TIMING.baseDurationSec;
     const initialMinBid = gs.config?.initialMinBid || 1;
@@ -171,6 +232,7 @@ export function parseGameState(gs) {
         extensions,
         fruitsToWin: gs.config?.fruitsToWin || 3,
         gridRadius: gs.gridSize?.radius || 3,
+        gridType,
         head,
         snakeLength: gs.snake?.body?.length || 0,
         currentDirection: gs.snake?.currentDirection,
@@ -200,19 +262,18 @@ export function getTeamById(parsed, teamId) {
  */
 export function bfsDistance(from, to, gameState, excludeHead = true, timeAware = false) {
     const radius = gameState.gridSize?.radius || 3;
+    const gridType = detectGridType(gameState);
+    const dirEntries = getDirectionsForGrid(gridType);
     const body = gameState.snake?.body || [];
     const bodySlice = excludeHead ? body.slice(1) : body;
     const startIdx = excludeHead ? 1 : 0;
     // Build obstacle map: key -> clearTime (when it becomes passable)
-    // For static BFS (timeAware=false), clearTime = Infinity (never passable)
     const obstacleClearTime = new Map();
     for (let i = 0; i < bodySlice.length; i++) {
         const seg = bodySlice[i];
         const key = `${seg.q},${seg.r}`;
         const bodyIdx = startIdx + i;
-        // Tail clears first: body[length-1] clears in 1 move, body[length-2] in 2, etc.
         const clearTime = timeAware ? (body.length - bodyIdx) : Infinity;
-        // If multiple segments occupy the same cell (shouldn't happen), keep the later clear time
         const existing = obstacleClearTime.get(key);
         if (existing === undefined || clearTime < existing) {
             obstacleClearTime.set(key, clearTime);
@@ -230,11 +291,11 @@ export function bfsDistance(from, to, gameState, excludeHead = true, timeAware =
         return { distance: 0, firstDir: null };
     const visited = new Set([start]);
     const queue = [];
-    for (const [dir, offset] of Object.entries(HEX_DIRECTIONS)) {
+    for (const [dir, offset] of dirEntries) {
         const nq = from.q + offset.q;
         const nr = from.r + offset.r;
         const key = `${nq},${nr}`;
-        if (!isInBounds(nq, nr, radius))
+        if (!isInBounds(nq, nr, radius, gridType))
             continue;
         if (isBlocked(key, 1))
             continue;
@@ -246,12 +307,12 @@ export function bfsDistance(from, to, gameState, excludeHead = true, timeAware =
     let head = 0;
     while (head < queue.length) {
         const cur = queue[head++];
-        for (const [, offset] of Object.entries(HEX_DIRECTIONS)) {
+        for (const [, offset] of dirEntries) {
             const nq = cur.q + offset.q;
             const nr = cur.r + offset.r;
             const key = `${nq},${nr}`;
             const newDist = cur.dist + 1;
-            if (!isInBounds(nq, nr, radius))
+            if (!isInBounds(nq, nr, radius, gridType))
                 continue;
             if (isBlocked(key, newDist))
                 continue;
@@ -271,6 +332,8 @@ export function bfsDistance(from, to, gameState, excludeHead = true, timeAware =
  */
 export function floodFillSize(pos, gameState, excludeDir = null) {
     const radius = gameState.gridSize?.radius || 3;
+    const gridType = detectGridType(gameState);
+    const dirEntries = getDirectionsForGrid(gridType);
     const body = gameState.snake?.body || [];
     const obstacles = new Set();
     for (const seg of body) {
@@ -282,13 +345,13 @@ export function floodFillSize(pos, gameState, excludeDir = null) {
     let head = 0;
     while (head < queue.length) {
         const cur = queue[head++];
-        for (const [dir, offset] of Object.entries(HEX_DIRECTIONS)) {
+        for (const [dir, offset] of dirEntries) {
             if (excludeDir && dir === excludeDir)
                 continue;
             const nq = cur.q + offset.q;
             const nr = cur.r + offset.r;
             const key = `${nq},${nr}`;
-            if (!isInBounds(nq, nr, radius))
+            if (!isInBounds(nq, nr, radius, gridType))
                 continue;
             if (obstacles.has(key))
                 continue;

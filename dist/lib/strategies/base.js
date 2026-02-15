@@ -11,7 +11,7 @@
  * - onGameEnd(parsed, state, didWin) -> void
  * - onRoundEnd(parsed, state) -> void
  */
-import { HEX_DIRECTIONS, OPPOSITE_DIRECTIONS, countExits, } from '../game-state.js';
+import { ALL_DIRECTION_OFFSETS, ALL_OPPOSITES, countExits, } from '../game-state.js';
 export class BaseStrategy {
     name;
     description;
@@ -82,12 +82,12 @@ export class BaseStrategy {
      * Higher score = safer
      */
     scoreDirectionSafety(dir, parsed) {
-        const offset = HEX_DIRECTIONS[dir];
+        const offset = ALL_DIRECTION_OFFSETS[dir];
         const newPos = {
             q: parsed.head.q + offset.q,
             r: parsed.head.r + offset.r,
         };
-        return countExits(newPos, parsed.raw, OPPOSITE_DIRECTIONS[dir]);
+        return countExits(newPos, parsed.raw, ALL_OPPOSITES[dir]);
     }
     /**
      * Find the safest valid direction

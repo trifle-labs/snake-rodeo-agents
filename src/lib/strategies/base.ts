@@ -14,8 +14,8 @@
 
 import type { Direction, HexPos, ParsedGameState, ParsedTeam } from '../game-state.js';
 import {
-  HEX_DIRECTIONS,
-  OPPOSITE_DIRECTIONS,
+  ALL_DIRECTION_OFFSETS,
+  ALL_OPPOSITES,
   countExits,
 } from '../game-state.js';
 
@@ -124,12 +124,12 @@ export class BaseStrategy {
    * Higher score = safer
    */
   scoreDirectionSafety(dir: Direction, parsed: ParsedGameState): number {
-    const offset = HEX_DIRECTIONS[dir];
+    const offset = ALL_DIRECTION_OFFSETS[dir];
     const newPos: HexPos = {
       q: parsed.head.q + offset.q,
       r: parsed.head.r + offset.r,
     };
-    return countExits(newPos, parsed.raw, OPPOSITE_DIRECTIONS[dir]);
+    return countExits(newPos, parsed.raw, ALL_OPPOSITES[dir]);
   }
 
   /**
