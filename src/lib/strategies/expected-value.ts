@@ -1,12 +1,21 @@
 /**
- * Expected Value Strategy -- v3
+ * Expected Value Strategy -- v4
  *
  * Maximizes per-agent ROI in multi-agent competitive games.
  *
- * v3 improvements over v2:
- * - Budget pacing: estimates remaining game rounds, skips low-value votes
+ * v4 improvements over v3:
+ * - EV-driven team selection: picks team with highest expected payout
+ *   per vote, not just the leader. Naturally defects from crowded teams
+ *   when a less-popular team offers better individual returns.
+ * - Pool-aware win probability: teams with more voters are more likely
+ *   to control the snake's direction (last-vote-wins mechanic).
+ * - All-pay payout modeling: all bets go to the prize pool regardless
+ *   of outcome. Winners split the entire pool. Your own lost bets may
+ *   partially return if your team wins, but shared with teammates.
+ *
+ * v3 features retained:
+ * - BFS pathfinding with dead-end avoidance
  * - Proximity-gated voting: always vote near fruit, skip only when far
- * - Vote-share awareness: prefers less-crowded teams for bigger payout
  * - Closest-fruit urgency: never skips when ANY fruit is ≤2 BFS steps away
  *
  * Game mechanics:
@@ -218,15 +227,6 @@ export class ExpectedValueStrategy extends BaseStrategy {
 
     const contrarian = this.getOption('contrarian', false);
 
-    // === Stateless team selection (v3) ===
-    // Re-evaluate the best team every round with no loyalty bias.
-    // In multi-agent games, the majority controls direction. Matching
-    // the consensus team (highest score, closest fruit) maximizes the
-    // chance of being on the winning side.
-    //
-    // Contrarian mode inverts this — favors less popular teams for a
-    // bigger individual payout share when they win.
-
     let pick: TeamStat;
 
     if (contrarian) {
@@ -240,22 +240,71 @@ export class ExpectedValueStrategy extends BaseStrategy {
         });
       pick = ranked[0] || teamStats[0];
     } else {
-      // Standard: back the current leader (highest score, then closest
-      // hex-distance as tiebreaker — matches what other agents do)
-      const ranked = [...teamStats]
-        .filter((t) => t.bfsDist < Infinity)
-        .sort((a, b) => {
-          if (b.team.score !== a.team.score) return b.team.score - a.team.score;
-          const aDist = a.team.closestFruit?.distance ?? 100;
-          const bDist = b.team.closestFruit?.distance ?? 100;
-          return aDist - bDist;
-        });
-      pick = ranked[0] || teamStats[0];
+      // === EV-driven team selection with probabilistic defection (v4) ===
+      //
+      // Pick the team with the highest expected payout per vote.
+      // This naturally handles the "defection" problem: when multiple
+      // agents pile onto the same team, the pool grows and each voter's
+      // share shrinks. At some point, a less-popular team with decent
+      // win probability offers a better individual return.
+      //
+      // All-pay payout flow:
+      //   1. Every voter pays minBid regardless of outcome (all-pay)
+      //   2. All bets from ALL teams go into the prize pool
+      //   3. When a team wins, the ENTIRE prize pool is split among
+      //      that team's voters proportionally by vote count
+      //   4. Your own bets are in the pool — if your team wins, they
+      //      come back as part of your share, but diluted by teammates.
+      //      With 3 teammates, you get back ~1/3 of your own contribution
+      //      plus ~1/3 of everyone else's. More teammates = less per head.
+      //
+      // Probabilistic defection: when multiple teams have comparable EV,
+      // randomly select weighted by EV rather than always picking the max.
+      // This breaks symmetry between identical agents — two EV bots seeing
+      // the same state may independently pick different teams, splitting
+      // the payout dilution and potentially both profiting more.
+      const reachable = [...teamStats].filter((t) => t.bfsDist < Infinity && t.ev > 0);
+
+      if (reachable.length === 0) {
+        pick = teamStats[0];
+      } else {
+        const best = reachable.reduce((a, b) => b.ev > a.ev ? b : a);
+
+        // Find teams within striking distance (EV >= 40% of best).
+        // Below this threshold, the team is clearly worse and not worth
+        // the gamble. Above it, the EV gap is close enough that pool
+        // dilution on the crowded team could make the underdog worthwhile.
+        const defectThreshold = this.getOption('defectThreshold', 0.4) as number;
+        const viable = reachable.filter((t) => t.ev >= best.ev * defectThreshold);
+
+        if (viable.length <= 1) {
+          // Only one viable team — no decision to make
+          pick = best;
+        } else {
+          // Weighted random selection: probability proportional to EV.
+          // Higher EV = more likely to be picked, but not guaranteed.
+          // This means two identical agents will sometimes split teams.
+          const totalEV = viable.reduce((sum, t) => sum + t.ev, 0);
+          const roll = Math.random() * totalEV;
+          let cumulative = 0;
+          pick = viable[viable.length - 1];
+          for (const t of viable) {
+            cumulative += t.ev;
+            if (roll < cumulative) {
+              pick = t;
+              break;
+            }
+          }
+        }
+      }
     }
 
-    const reason = currentTeamId && pick.team.id !== currentTeamId
-      ? `switch(${pick.team.id},s:${pick.team.score},d:${pick.bfsDist})`
-      : `back(${pick.team.id},s:${pick.team.score},d:${pick.bfsDist})`;
+    let reason: string;
+    if (!currentTeamId || pick.team.id === currentTeamId) {
+      reason = `back(${pick.team.id},s:${pick.team.score},d:${pick.bfsDist},ev:${pick.ev.toFixed(1)})`;
+    } else {
+      reason = `defect(${pick.team.id},s:${pick.team.score},d:${pick.bfsDist},ev:${pick.ev.toFixed(1)})`;
+    }
 
     return {
       shouldPlay: true,
@@ -267,28 +316,85 @@ export class ExpectedValueStrategy extends BaseStrategy {
     };
   }
 
+  /**
+   * Expected value of one vote on a given team.
+   *
+   * Models the all-pay auction payout:
+   *   EV = P(team wins) × prizePool × ourShare
+   *
+   * Key insight for defection:
+   *   All bets go into one prize pool regardless of outcome (all-pay).
+   *   When a team wins, the ENTIRE pool is split among that team's
+   *   voters by vote count. Your own bets are in there — if your team
+   *   wins they come back as part of your share, but diluted by
+   *   teammates. With 3 teammates you get ~1/3 of your own contribution
+   *   back plus ~1/3 of everyone else's. More teammates = less per head.
+   *
+   *   So: crowded team = high win chance, small slice per voter.
+   *       Empty team   = lower win chance, but you keep everything.
+   *
+   *   The agent should defect when the solo payout on a rival team
+   *   outweighs the diluted payout on the consensus team.
+   */
   calculateExpectedValue(team: ParsedTeam, parsed: ParsedGameState, isCurrentTeam: boolean = false, bfsDist: number | null = null): number {
     const fruitsNeeded = parsed.fruitsToWin - team.score;
     const dist = bfsDist ?? team.closestFruit?.distance ?? 10;
 
     if (!team.closestFruit || fruitsNeeded <= 0) return 0;
+    if (dist === Infinity) return 0;
 
-    // Win probability decreases with distance and fruits needed
-    let winProb: number;
-    if (fruitsNeeded === 1 && dist <= 1) winProb = 0.9;
-    else if (fruitsNeeded === 1 && dist <= 3) winProb = 0.6;
-    else if (fruitsNeeded === 1) winProb = 0.3;
-    else if (fruitsNeeded === 2 && dist <= 2) winProb = 0.35;
-    else if (fruitsNeeded === 2) winProb = 0.2;
-    else winProb = 0.1;
+    // --- Base win probability from game position ---
+    let baseWinProb: number;
+    if (fruitsNeeded === 1 && dist <= 1) baseWinProb = 0.9;
+    else if (fruitsNeeded === 1 && dist <= 3) baseWinProb = 0.6;
+    else if (fruitsNeeded === 1) baseWinProb = 0.3;
+    else if (fruitsNeeded === 2 && dist <= 2) baseWinProb = 0.35;
+    else if (fruitsNeeded === 2) baseWinProb = 0.2;
+    else baseWinProb = 0.1;
 
-    // Penalize unreachable fruits
-    if (dist === Infinity) winProb = 0;
+    // --- Direction control factor (mild) ---
+    // In last-vote-wins, more voters on a team = more chances to cast
+    // the final vote. But a solo agent on an empty team still has
+    // PERFECT control when they do vote — just fewer total votes.
+    //
+    // We model "what if I join?" by including our hypothetical vote
+    // in the team's pool. This way an empty team we'd defect to
+    // gets credit for the control we'd bring.
+    const totalPools = parsed.teams.reduce((sum, t) => sum + (t.pool || 0), 0);
+    const teamPool = team.pool || 0;
+    const minBid = parsed.initialMinBid || 1;
 
-    const pool = team.pool || 0;
+    const ourContrib = isCurrentTeam ? 0 : minBid;
+    const effectiveTeamPool = teamPool + ourContrib;
+    const effectiveTotalPools = totalPools + ourContrib;
+
+    let controlShare: number;
+    if (effectiveTotalPools === 0) {
+      controlShare = 1 / parsed.teams.length;
+    } else {
+      controlShare = effectiveTeamPool / effectiveTotalPools;
+    }
+
+    // Mild influence: 70% base position + 30% control.
+    // A solo defector with close fruit keeps ~70% of base winProb.
+    // A dominant team gets up to 100%. Not a dealbreaker, just a nudge.
+    const controlBoost = Math.min(controlShare * parsed.teams.length, 1);
+    const winProb = baseWinProb * (0.7 + 0.3 * controlBoost);
+
+    // --- Payout dilution (unique voters, not cumulative votes) ---
+    // pool / minBid over-counts because the same agents vote every round.
+    // A pool of 10 with minBid=1 after 5 rounds could be 2 agents × 5,
+    // not 10 separate voters. Estimate unique voters by dividing by the
+    // number of rounds played (each voter contributes ~1 vote per round).
+    const round = parsed.round ?? 0;
+    const votesPerVoter = Math.max(round, 1);
+    const estimatedVoters = Math.max(teamPool / (minBid * votesPerVoter), 1);
+
+    // If joining a new team, add ourselves to the voter count
+    const totalVoters = estimatedVoters + (isCurrentTeam ? 0 : 1);
+    const ourShare = 1 / totalVoters;
+
     const prizePool = parsed.prizePool;
-    const estimatedTeamVotes = Math.max(pool / (parsed.initialMinBid || 1), 1);
-    const ourShare = 1 / (estimatedTeamVotes + (isCurrentTeam ? 0 : 1));
     const payoutIfWin = prizePool * ourShare;
 
     return winProb * payoutIfWin;

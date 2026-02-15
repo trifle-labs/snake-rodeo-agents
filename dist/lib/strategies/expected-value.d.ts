@@ -1,12 +1,21 @@
 /**
- * Expected Value Strategy -- v3
+ * Expected Value Strategy -- v4
  *
  * Maximizes per-agent ROI in multi-agent competitive games.
  *
- * v3 improvements over v2:
- * - Budget pacing: estimates remaining game rounds, skips low-value votes
+ * v4 improvements over v3:
+ * - EV-driven team selection: picks team with highest expected payout
+ *   per vote, not just the leader. Naturally defects from crowded teams
+ *   when a less-popular team offers better individual returns.
+ * - Pool-aware win probability: teams with more voters are more likely
+ *   to control the snake's direction (last-vote-wins mechanic).
+ * - All-pay payout modeling: all bets go to the prize pool regardless
+ *   of outcome. Winners split the entire pool. Your own lost bets may
+ *   partially return if your team wins, but shared with teammates.
+ *
+ * v3 features retained:
+ * - BFS pathfinding with dead-end avoidance
  * - Proximity-gated voting: always vote near fruit, skip only when far
- * - Vote-share awareness: prefers less-crowded teams for bigger payout
  * - Closest-fruit urgency: never skips when ANY fruit is ≤2 BFS steps away
  *
  * Game mechanics:
@@ -64,6 +73,26 @@ export declare class ExpectedValueStrategy extends BaseStrategy {
     shouldCounterBid(parsed: ParsedGameState, balance: number, state: AgentState, ourVote: VoteAction): VoteResult;
     estimateWinProb(team: ParsedTeam, parsed: ParsedGameState): number;
     analyzeTeams(parsed: ParsedGameState, currentTeamId: string | null): TeamAnalysis;
+    /**
+     * Expected value of one vote on a given team.
+     *
+     * Models the all-pay auction payout:
+     *   EV = P(team wins) × prizePool × ourShare
+     *
+     * Key insight for defection:
+     *   All bets go into one prize pool regardless of outcome (all-pay).
+     *   When a team wins, the ENTIRE pool is split among that team's
+     *   voters by vote count. Your own bets are in there — if your team
+     *   wins they come back as part of your share, but diluted by
+     *   teammates. With 3 teammates you get ~1/3 of your own contribution
+     *   back plus ~1/3 of everyone else's. More teammates = less per head.
+     *
+     *   So: crowded team = high win chance, small slice per voter.
+     *       Empty team   = lower win chance, but you keep everything.
+     *
+     *   The agent should defect when the solo payout on a rival team
+     *   outweighs the diluted payout on the consensus team.
+     */
     calculateExpectedValue(team: ParsedTeam, parsed: ParsedGameState, isCurrentTeam?: boolean, bfsDist?: number | null): number;
     /**
      * Score a direction considering:
