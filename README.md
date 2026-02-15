@@ -10,6 +10,7 @@ Standalone TypeScript library and CLI for playing the [Trifle Snake Rodeo](https
 - **Wallet auth** — SIWE (Sign In With Ethereum) authentication using viem
 - **Standalone runner** — CLI agent that connects to a live server and plays autonomously
 - **Local simulator** — offline game simulator for testing strategies against each other
+- **Tournament CLI** — high-speed seeded tournament runner for comparing strategies
 
 ## Installation
 
@@ -143,6 +144,54 @@ await tg.send('<b>Hello</b> from the snake agent!');
 await tg.send(formatGameEnd(winnerTeam, true));
 ```
 
+## Tournament Simulator
+
+Run offline tournaments to compare strategies at high speed with reproducible results.
+
+### CLI
+
+```bash
+# Compare expected-value vs aggressive (100 games per config, all configs)
+npm run simulate -- ev,aggressive
+
+# Specific config, seeded for reproducibility
+npm run simulate -- ev,aggressive --games 50 --config small --seed 42
+
+# Multiple strategies with options
+npm run simulate -- ev,ev:contrarian,random --games 200
+
+# Machine-readable JSON output
+npm run simulate -- ev,aggressive --json
+```
+
+### Options
+
+| Flag | Description |
+|------|-------------|
+| `-g, --games N` | Games per config (default: 100) |
+| `-c, --config NAME` | `small\|medium\|large\|all` (default: all) |
+| `-s, --seed N` | RNG seed for reproducibility |
+| `-v, --verbose` | Print per-round details |
+| `--json` | Machine-readable JSON output |
+| `-h, --help` | Show help and available strategies |
+
+Agent specs use the format `strategy[:option[:option]]` — e.g. `ev`, `ev:contrarian`, `aggressive`.
+
+### Library
+
+```javascript
+import { SimAgent, runTournament, RODEO_CYCLES, getStrategy, createRNG } from 'snake-rodeo-agents';
+
+const agents = [
+  new SimAgent('a', 'ev-agent', getStrategy('ev')),
+  new SimAgent('b', 'agg-agent', getStrategy('aggressive')),
+];
+
+const results = runTournament(agents, RODEO_CYCLES, 100, { seed: 42 });
+console.log(results.agentStats);
+// Re-run with same seed for identical results
+```
+
 ## Strategies
 
 | Strategy | Description |
@@ -173,7 +222,8 @@ snake-rodeo-agents/
 │   │       ├── underdog.ts
 │   │       └── random.ts
 │   └── bin/
-│       └── play.ts               # Standalone CLI runner
+│       ├── play.ts               # Standalone CLI runner
+│       └── simulate.ts           # Tournament simulator CLI
 ├── dist/                         # Compiled JS + declarations
 ├── package.json
 └── tsconfig.json

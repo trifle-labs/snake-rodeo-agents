@@ -68,6 +68,30 @@ export type {
   AuthUser,
 } from './lib/auth.js';
 
+// Simulator
+export {
+  SimAgent,
+  simulateGame,
+  runTournament,
+  createGameState,
+  advanceRound,
+  printBoard,
+  RODEO_CYCLES,
+  createRNG,
+  shuffleArray,
+} from './lib/simulator.js';
+
+export type {
+  SimGameState,
+  SimulateOptions,
+  SimulateGameResult,
+  TournamentResults,
+  RodeoCycleConfig,
+  AdvanceResult,
+  Strategy,
+  RNG,
+} from './lib/simulator.js';
+
 // Telegram logging (optional)
 export { TelegramLogger, formatVote, formatGameEnd, formatTeamSwitch, formatError, formatWarning } from './lib/telegram.js';
 export type { TelegramConfig } from './lib/telegram.js';

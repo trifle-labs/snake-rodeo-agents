@@ -11,6 +11,8 @@ export { SnakeClient } from './lib/client.js';
 export type { ApiError } from './lib/client.js';
 export { createAndAuthenticate, reauthenticate, authenticateWallet, checkToken, } from './lib/auth.js';
 export type { AuthResult, AuthOptions, AuthUser, } from './lib/auth.js';
+export { SimAgent, simulateGame, runTournament, createGameState, advanceRound, printBoard, RODEO_CYCLES, createRNG, shuffleArray, } from './lib/simulator.js';
+export type { SimGameState, SimulateOptions, SimulateGameResult, TournamentResults, RodeoCycleConfig, AdvanceResult, Strategy, RNG, } from './lib/simulator.js';
 export { TelegramLogger, formatVote, formatGameEnd, formatTeamSwitch, formatError, formatWarning } from './lib/telegram.js';
 export type { TelegramConfig } from './lib/telegram.js';
 //# sourceMappingURL=index.d.ts.map

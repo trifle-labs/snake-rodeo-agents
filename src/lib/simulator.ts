@@ -27,6 +27,43 @@ import type {
 
 import type { VoteResult, VoteAction, AgentState } from './strategies/base.js';
 
+// ── Seeded PRNG (mulberry32) ────────────────────────────────────────
+
+/** A function that returns a pseudo-random number in [0, 1) */
+export type RNG = () => number;
+
+/**
+ * mulberry32 — fast, high-quality 32-bit PRNG.
+ * Returns a function producing values in [0, 1).
+ */
+function mulberry32(seed: number): RNG {
+  return () => {
+    seed |= 0; seed = (seed + 0x6d2b79f5) | 0;
+    let t = Math.imul(seed ^ (seed >>> 15), 1 | seed);
+    t = (t + Math.imul(t ^ (t >>> 7), 61 | t)) ^ t;
+    return ((t ^ (t >>> 14)) >>> 0) / 4294967296;
+  };
+}
+
+/**
+ * Create a seeded RNG. If no seed is provided one is auto-generated.
+ */
+export function createRNG(seed?: number): { rng: RNG; seed: number } {
+  const s = seed ?? ((Math.random() * 0xffffffff) >>> 0);
+  return { rng: mulberry32(s), seed: s };
+}
+
+/**
+ * Fisher-Yates shuffle (in-place, returns same array).
+ */
+export function shuffleArray<T>(arr: T[], rng: RNG): T[] {
+  for (let i = arr.length - 1; i > 0; i--) {
+    const j = (rng() * (i + 1)) | 0;
+    [arr[i], arr[j]] = [arr[j], arr[i]];
+  }
+  return arr;
+}
+
 // Team configs matching the server
 interface TeamConfig {
   id: string;
@@ -166,6 +203,7 @@ export interface SimulateGameResult {
   rounds: number;
   fruitScores: Record<string, number>;
   roundLog: RoundLogEntry[];
+  seed: number;
 }
 
 interface RoundLogEntry {
@@ -196,7 +234,8 @@ export interface TournamentResults {
   wins: Record<string, number>;
   avgRounds: number;
   configResults: ConfigResult[];
-  agentStats?: { name: string; strategy: string; gamesPlayed: number; wins: number; winRate: string }[];
+  agentStats?: { name: string; strategy: string; gamesPlayed: number; wins: number; winRate: string; totalSpent: number; totalEarned: number; profit: number; roi: string }[];
+  seed: number;
 }
 
 /**
@@ -206,6 +245,7 @@ function generateFruitPosition(
   snakeBody: HexPos[],
   existingFruits: HexPos[],
   radius: number,
+  rng: RNG = Math.random,
 ): HexPos {
   let minDistFromCenter: number;
   if (radius === 2) minDistFromCenter = 1;
@@ -213,8 +253,8 @@ function generateFruitPosition(
   else minDistFromCenter = Math.floor(radius * 0.5);
 
   for (let attempts = 0; attempts < 1000; attempts++) {
-    const angle = Math.random() * 2 * Math.PI;
-    const distance = minDistFromCenter + Math.random() * (radius - minDistFromCenter);
+    const angle = rng() * 2 * Math.PI;
+    const distance = minDistFromCenter + rng() * (radius - minDistFromCenter);
     const q = Math.round(distance * Math.cos(angle));
     const r = Math.round(distance * Math.sin(angle) - q / 2);
 
@@ -239,7 +279,7 @@ function generateFruitPosition(
 /**
  * Create initial game state for a simulation
  */
-export function createGameState(config: RodeoCycleConfig): SimGameState {
+export function createGameState(config: RodeoCycleConfig, rng: RNG = Math.random): SimGameState {
   const teams = TEAM_CONFIG.slice(0, config.numberOfTeams);
   const radius = config.hexRadius;
 
@@ -252,7 +292,7 @@ export function createGameState(config: RodeoCycleConfig): SimGameState {
   for (const team of teams) {
     apples[team.id] = [];
     for (let i = 0; i < config.fruitsPerTeam; i++) {
-      const fruit = generateFruitPosition(body, allFruits, radius);
+      const fruit = generateFruitPosition(body, allFruits, radius, rng);
       apples[team.id].push(fruit);
       allFruits.push(fruit);
     }
@@ -317,6 +357,7 @@ export function advanceRound(
   gameState: SimGameState,
   direction: Direction,
   winningTeamId: string | null,
+  rng: RNG = Math.random,
 ): AdvanceResult {
   const head = gameState.snake.body[0];
   const offset = HEX_DIRECTIONS[direction];
@@ -381,7 +422,7 @@ export function advanceRound(
     // Respawn fruit if enabled
     if (gameState.config.respawn) {
       const allFruits = Object.values(newApples).flat();
-      const newFruit = generateFruitPosition(newBody, allFruits, radius);
+      const newFruit = generateFruitPosition(newBody, allFruits, radius, rng);
       newApples[ateTeam!] = [...newApples[ateTeam!], newFruit];
     }
   }
@@ -440,6 +481,11 @@ export class SimAgent {
   balance: number;
   currentTeam: string | null;
   totalSpent: number;
+  totalEarned: number;
+  /** Cumulative spending across all games (persists through reset) */
+  cumulativeSpent: number;
+  /** Cumulative earnings across all games (persists through reset) */
+  cumulativeEarned: number;
   votesPlaced: number;
   wins: number;
   gamesPlayed: number;
@@ -452,6 +498,9 @@ export class SimAgent {
     this.balance = balance;
     this.currentTeam = null;
     this.totalSpent = 0;
+    this.totalEarned = 0;
+    this.cumulativeSpent = 0;
+    this.cumulativeEarned = 0;
     this.votesPlaced = 0;
     this.wins = 0;
     this.gamesPlayed = 0;
@@ -459,19 +508,30 @@ export class SimAgent {
   }
 
   reset(balance: number = 100): void {
+    this.balance = balance;
     this.currentTeam = null;
     this.totalSpent = 0;
+    this.totalEarned = 0;
     this.votesPlaced = 0;
   }
+
+  // Per-round tracking (reset each round by simulateGame)
+  roundSpend: number = 0;
+  roundVoteCount: number = 0;
+
+  /** Max fraction of balance to spend in a single round */
+  maxRoundBudgetPct: number = 0.2;
 
   computeVote(gameState: SimGameState): VoteAction | null {
     const parsed = parseGameState(gameState);
     if (!parsed || !parsed.active) return null;
 
+    const roundBudget = this.balance * this.maxRoundBudgetPct;
     const state: AgentState = {
       currentTeam: this.currentTeam,
-      roundSpend: 0,
-      roundVoteCount: 0,
+      roundSpend: this.roundSpend,
+      roundVoteCount: this.roundVoteCount,
+      roundBudgetRemaining: Math.max(0, roundBudget - this.roundSpend),
       lastRound: -1,
       gamesPlayed: this.gamesPlayed,
       votesPlaced: this.votesPlaced,
@@ -485,24 +545,75 @@ export class SimAgent {
     this.balance -= result.amount;
     this.totalSpent += result.amount;
     this.votesPlaced++;
+    this.roundSpend += result.amount;
+    this.roundVoteCount++;
 
     return result;
+  }
+
+  /**
+   * Attempt a counter-bid after being overridden.
+   * Returns a VoteAction if the agent wants to counter, null otherwise.
+   */
+  computeCounterBid(gameState: SimGameState, previousVote: VoteAction): VoteAction | null {
+    if (!this.strategy.shouldCounterBid) return null;
+
+    const parsed = parseGameState(gameState);
+    if (!parsed || !parsed.active) return null;
+    if (this.balance < parsed.minBid) return null;
+
+    const roundBudget = this.balance * this.maxRoundBudgetPct;
+    const state: AgentState = {
+      currentTeam: this.currentTeam,
+      roundSpend: this.roundSpend,
+      roundVoteCount: this.roundVoteCount,
+      roundBudgetRemaining: Math.max(0, roundBudget - this.roundSpend),
+      lastRound: -1,
+      gamesPlayed: this.gamesPlayed,
+      votesPlaced: this.votesPlaced,
+      wins: this.wins,
+    };
+
+    const result = this.strategy.shouldCounterBid(parsed, this.balance, state, previousVote);
+    if (!result || 'skip' in result) return null;
+
+    this.currentTeam = result.team.id;
+    this.balance -= result.amount;
+    this.totalSpent += result.amount;
+    this.votesPlaced++;
+    this.roundSpend += result.amount;
+    this.roundVoteCount++;
+
+    return result;
+  }
+
+  /** Reset per-round counters (called at start of each round) */
+  resetRound(): void {
+    this.roundSpend = 0;
+    this.roundVoteCount = 0;
   }
 }
 
 export interface SimulateOptions {
   maxRounds?: number;
   verbose?: boolean;
+  seed?: number;
+  /** Max counter-bid extensions per round (default: 5). Each extension doubles minBid. */
+  maxExtensions?: number;
 }
 
 /**
  * Run a single simulated game with multiple agents.
  *
  * Each round:
- * 1. All agents compute votes
- * 2. Last vote wins (simulates the real auction)
- * 3. Snake moves in the winning direction
- * 4. Repeat until a team wins or max rounds reached
+ * 1. Reset per-round budgets, shuffle agent order
+ * 2. All agents compute initial votes
+ * 3. "Last vote wins" — reveal the winning direction
+ * 4. Counter-bidding loop: agents whose direction was overridden can
+ *    counter-bid. Each counter-bid doubles minBid (extension mechanic).
+ *    Loop until no one counters or max extensions reached.
+ * 5. Snake moves in the final winning direction
+ * 6. Repeat until a team wins or max rounds reached
  */
 export function simulateGame(
   agents: SimAgent[],
@@ -511,8 +622,10 @@ export function simulateGame(
 ): SimulateGameResult {
   const maxRounds = options.maxRounds || 200;
   const verbose = options.verbose || false;
+  const maxExtensions = options.maxExtensions ?? 5;
+  const { rng, seed } = createRNG(options.seed);
 
-  let gameState = createGameState(config);
+  let gameState = createGameState(config, rng);
 
   // Reset agents
   for (const agent of agents) {
@@ -521,46 +634,111 @@ export function simulateGame(
   }
 
   const roundLog: RoundLogEntry[] = [];
+  const agentOrder = [...agents];
 
   for (let round = 0; round < maxRounds; round++) {
     if (!gameState.gameActive) break;
 
-    // Collect votes from all agents
+    // Reset per-round budget tracking
+    for (const agent of agents) agent.resetRound();
+
+    // Shuffle agent order for fairness
+    shuffleArray(agentOrder, rng);
+
+    // === Phase 1: Initial votes ===
+    const savedRandom = Math.random;
+    Math.random = rng;
     const votes: { agent: SimAgent; vote: VoteAction }[] = [];
-    for (const agent of agents) {
-      const vote = agent.computeVote(gameState);
-      if (vote) {
-        votes.push({ agent, vote });
+    try {
+      for (const agent of agentOrder) {
+        const vote = agent.computeVote(gameState);
+        if (vote) {
+          votes.push({ agent, vote });
+        }
       }
+    } finally {
+      Math.random = savedRandom;
     }
 
     if (votes.length === 0) {
-      // No votes - snake continues in current direction
+      // No votes — snake continues in current direction
       const validDirs = getValidDirections(gameState);
       if (validDirs.length === 0) {
-        // Dead end - game over
         if (verbose) console.log(`Round ${round}: Dead end!`);
         break;
       }
-
-      // Continue in current direction if valid, otherwise pick first valid
       const dir = validDirs.includes(gameState.snake.currentDirection)
         ? gameState.snake.currentDirection
         : validDirs[0];
-
-      const result = advanceRound(gameState, dir, null);
+      const result = advanceRound(gameState, dir, null, rng);
       gameState = result.gameState;
       continue;
     }
 
-    // "Last vote wins" - simulate by picking the vote from the agent
-    // that would go last. In simulation, we pick the last vote.
-    const lastVote = votes[votes.length - 1];
+    // === Phase 2: Counter-bidding loop ===
+    // The last vote determines direction + team. Agents whose preferred
+    // direction was overridden can counter-bid (at escalating cost).
+    let currentMinBid = gameState.minBid;
+    let extensions = 0;
+    let lastVote = votes[votes.length - 1];
+
+    for (let ext = 0; ext < maxExtensions; ext++) {
+      // Double minBid for the counter-bid (extension penalty)
+      const counterBidCost = currentMinBid * 2;
+
+      // Update gameState so strategies see the current extensions + minBid
+      gameState = {
+        ...gameState,
+        minBid: counterBidCost,
+        snake: {
+          ...gameState.snake,
+          currentDirection: lastVote.vote.direction,
+          currentWinningTeam: lastVote.vote.team.id,
+        },
+      };
+
+      // Find agents whose direction was overridden
+      const overridden = votes.filter(v =>
+        v.agent !== lastVote.agent &&
+        v.vote.direction !== lastVote.vote.direction
+      );
+
+      if (overridden.length === 0) break;
+
+      // Shuffle overridden agents for fairness, let them counter-bid
+      const counterOrder = [...overridden];
+      shuffleArray(counterOrder, rng);
+
+      let anyCountered = false;
+      Math.random = rng;
+      try {
+        for (const { agent, vote: prevVote } of counterOrder) {
+          const counter = agent.computeCounterBid(gameState, prevVote);
+          if (counter) {
+            votes.push({ agent, vote: counter });
+            lastVote = { agent, vote: counter };
+            anyCountered = true;
+          }
+        }
+      } finally {
+        Math.random = savedRandom;
+      }
+
+      if (!anyCountered) break;
+
+      extensions++;
+      currentMinBid = counterBidCost;
+    }
+
+    // Restore original minBid for next round
+    gameState = { ...gameState, minBid: config.initialMinBid || 1 };
+
+    // Final winner is the last vote after all counter-bidding
     const direction = lastVote.vote.direction;
     const winningTeam = lastVote.vote.team.id;
 
-    // Record team pool contributions
-    for (const { agent, vote } of votes) {
+    // Record team pool contributions for ALL votes (initial + counters)
+    for (const { vote } of votes) {
       gameState.teamPools[vote.team.id] = (gameState.teamPools[vote.team.id] || 0) + vote.amount;
       gameState.prizePool += vote.amount;
     }
@@ -570,13 +748,18 @@ export function simulateGame(
     let actualDir: Direction = direction;
     if (!validDirs.includes(direction)) {
       actualDir = validDirs[0];
-      if (!actualDir) break; // dead end
+      if (!actualDir) break;
     }
 
-    const result = advanceRound(gameState, actualDir, winningTeam);
+    const result = advanceRound(gameState, actualDir, winningTeam, rng);
 
-    if (verbose && result.ateFruit) {
-      console.log(`Round ${round}: ${winningTeam} ate fruit! Scores: ${JSON.stringify(result.gameState.fruitScores)}`);
+    if (verbose) {
+      const extStr = extensions > 0 ? ` (${extensions} ext)` : '';
+      if (result.ateFruit) {
+        console.log(`Round ${round}: ${winningTeam} ate fruit!${extStr} Scores: ${JSON.stringify(result.gameState.fruitScores)}`);
+      } else if (extensions > 0) {
+        console.log(`Round ${round}: ${actualDir} → ${winningTeam}${extStr}`);
+      }
     }
 
     roundLog.push({
@@ -594,19 +777,34 @@ export function simulateGame(
     gameState = result.gameState;
 
     if (result.winner) {
-      // Credit wins to agents on the winning team
+      // Calculate payouts: proportional to votes placed on winning team.
+      // The real server pays per-vote-count, not equal split.
+      // Agent with 10 votes gets 10 shares, agent with 5 gets 5.
+      const winningAgents = agents.filter(a => a.currentTeam === result.winner);
+      const totalWinningVotes = winningAgents.reduce((sum, a) => sum + a.votesPlaced, 0);
+
       for (const agent of agents) {
         if (agent.currentTeam === result.winner) {
           agent.wins++;
+          if (totalWinningVotes > 0) {
+            const share = agent.votesPlaced / totalWinningVotes;
+            agent.totalEarned += gameState.prizePool * share;
+          }
         }
       }
 
       if (verbose) {
-        console.log(`Game over! Winner: ${result.winner} in ${round + 1} rounds`);
+        console.log(`Game over! Winner: ${result.winner} in ${round + 1} rounds (pool: ${gameState.prizePool}, ${totalWinningVotes} votes from ${winningAgents.length} agents)`);
         console.log(`Final scores: ${JSON.stringify(gameState.fruitScores)}`);
       }
       break;
     }
+  }
+
+  // Accumulate per-game totals into cumulative trackers
+  for (const agent of agents) {
+    agent.cumulativeSpent += agent.totalSpent;
+    agent.cumulativeEarned += agent.totalEarned;
   }
 
   return {
@@ -615,6 +813,7 @@ export function simulateGame(
     rounds: gameState.round,
     fruitScores: { ...gameState.fruitScores },
     roundLog,
+    seed,
   };
 }
 
@@ -628,11 +827,14 @@ export function runTournament(
   options: SimulateOptions = {},
 ): TournamentResults {
   const verbose = options.verbose || false;
+  const { rng: masterRng, seed: masterSeed } = createRNG(options.seed);
+
   const results: TournamentResults = {
     totalGames: 0,
     wins: {},
     avgRounds: 0,
     configResults: [],
+    seed: masterSeed,
   };
 
   // Init win counters for teams
@@ -655,11 +857,16 @@ export function runTournament(
       configResult.wins[team.id] = 0;
     }
 
+    let configRounds = 0;
+
     for (let g = 0; g < numGamesPerConfig; g++) {
-      const result = simulateGame(agents, config, { verbose, maxRounds: 200 });
+      // Derive per-game seed from master RNG
+      const gameSeed = (masterRng() * 0xffffffff) >>> 0;
+      const result = simulateGame(agents, config, { verbose, maxRounds: 200, seed: gameSeed });
       results.totalGames++;
       configResult.games++;
       totalRounds += result.rounds;
+      configRounds += result.rounds;
 
       if (result.winner) {
         results.wins[result.winner] = (results.wins[result.winner] || 0) + 1;
@@ -669,19 +876,25 @@ export function runTournament(
       }
     }
 
-    configResult.avgRounds = totalRounds / configResult.games;
+    configResult.avgRounds = configRounds / configResult.games;
     results.configResults.push(configResult);
   }
 
   results.avgRounds = totalRounds / results.totalGames;
 
-  // Agent stats
+  // Agent stats (use cumulative values that persist across game resets)
   results.agentStats = agents.map(a => ({
     name: a.name,
     strategy: a.strategy.name,
     gamesPlayed: a.gamesPlayed,
     wins: a.wins,
     winRate: (a.wins / a.gamesPlayed * 100).toFixed(1) + '%',
+    totalSpent: Math.round(a.cumulativeSpent),
+    totalEarned: Math.round(a.cumulativeEarned),
+    profit: Math.round(a.cumulativeEarned - a.cumulativeSpent),
+    roi: a.cumulativeSpent > 0
+      ? ((a.cumulativeEarned - a.cumulativeSpent) / a.cumulativeSpent * 100).toFixed(1) + '%'
+      : '0.0%',
   }));
 
   return results;

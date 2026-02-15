@@ -13,11 +13,13 @@
     "./lib/*": "./dist/lib/*"
   },
   "bin": {
-    "snake-rodeo-agents": "./dist/bin/play.js"
+    "snake-rodeo-agents": "./dist/bin/play.js",
+    "snake-rodeo-simulate": "./dist/bin/simulate.js"
   },
   "scripts": {
     "build": "tsc",
-    "play": "node dist/bin/play.js"
+    "play": "node dist/bin/play.js",
+    "simulate": "node dist/bin/simulate.js"
   },
   "dependencies": {
     "viem": "^2.45.3"

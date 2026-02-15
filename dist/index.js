@@ -11,6 +11,8 @@ export { getStrategy, listStrategiesWithInfo, BaseStrategy, } from './lib/strate
 export { SnakeClient } from './lib/client.js';
 // Wallet auth
 export { createAndAuthenticate, reauthenticate, authenticateWallet, checkToken, } from './lib/auth.js';
+// Simulator
+export { SimAgent, simulateGame, runTournament, createGameState, advanceRound, printBoard, RODEO_CYCLES, createRNG, shuffleArray, } from './lib/simulator.js';
 // Telegram logging (optional)
 export { TelegramLogger, formatVote, formatGameEnd, formatTeamSwitch, formatError, formatWarning } from './lib/telegram.js';
 //# sourceMappingURL=index.js.map
