@@ -1,6 +1,6 @@
 # snake-rodeo-agents
 
-Standalone TypeScript library and CLI for playing the [Trifle Snake Rodeo](https://trifle.life) game.
+Standalone TypeScript library and CLI for playing the [Trifle Snake Rodeo](https://snake.rodeo) game.
 
 ## Features
 
