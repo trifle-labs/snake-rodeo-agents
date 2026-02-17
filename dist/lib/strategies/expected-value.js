@@ -223,29 +223,41 @@ export class ExpectedValueStrategy extends BaseStrategy {
             }
             else {
                 const best = reachable.reduce((a, b) => b.ev > a.ev ? b : a);
-                // Find teams within striking distance (EV >= 40% of best).
-                // Below this threshold, the team is clearly worse and not worth
-                // the gamble. Above it, the EV gap is close enough that pool
-                // dilution on the crowded team could make the underdog worthwhile.
-                const defectThreshold = this.getOption('defectThreshold', 0.4);
-                const viable = reachable.filter((t) => t.ev >= best.ev * defectThreshold);
-                if (viable.length <= 1) {
-                    // Only one viable team — no decision to make
+                // Probabilistic defection: only when there's evidence of other
+                // agents (total pools > 0). A single agent should always pick
+                // the deterministic best — defection is about pool dilution from
+                // teammates, which only matters with multiple participants.
+                const totalPools = parsed.teams.reduce((sum, t) => sum + (t.pool || 0), 0);
+                const hasCompetition = totalPools > 0;
+                if (!hasCompetition) {
+                    // Single agent or first round — pick deterministic best
                     pick = best;
                 }
                 else {
-                    // Weighted random selection: probability proportional to EV.
-                    // Higher EV = more likely to be picked, but not guaranteed.
-                    // This means two identical agents will sometimes split teams.
-                    const totalEV = viable.reduce((sum, t) => sum + t.ev, 0);
-                    const roll = Math.random() * totalEV;
-                    let cumulative = 0;
-                    pick = viable[viable.length - 1];
-                    for (const t of viable) {
-                        cumulative += t.ev;
-                        if (roll < cumulative) {
-                            pick = t;
-                            break;
+                    // Find teams within striking distance (EV >= 40% of best).
+                    // Below this threshold, the team is clearly worse and not worth
+                    // the gamble. Above it, the EV gap is close enough that pool
+                    // dilution on the crowded team could make the underdog worthwhile.
+                    const defectThreshold = this.getOption('defectThreshold', 0.4);
+                    const viable = reachable.filter((t) => t.ev >= best.ev * defectThreshold);
+                    if (viable.length <= 1) {
+                        // Only one viable team — no decision to make
+                        pick = best;
+                    }
+                    else {
+                        // Weighted random selection: probability proportional to EV.
+                        // Higher EV = more likely to be picked, but not guaranteed.
+                        // This means two identical agents will sometimes split teams.
+                        const totalEV = viable.reduce((sum, t) => sum + t.ev, 0);
+                        const roll = Math.random() * totalEV;
+                        let cumulative = 0;
+                        pick = viable[viable.length - 1];
+                        for (const t of viable) {
+                            cumulative += t.ev;
+                            if (roll < cumulative) {
+                                pick = t;
+                                break;
+                            }
                         }
                     }
                 }

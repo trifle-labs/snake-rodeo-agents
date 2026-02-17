@@ -343,10 +343,12 @@ export function floodFillSize(pos, gameState, excludeDir = null) {
     const visited = new Set([start]);
     const queue = [pos];
     let head = 0;
+    let isStart = true;
     while (head < queue.length) {
         const cur = queue[head++];
         for (const [dir, offset] of dirEntries) {
-            if (excludeDir && dir === excludeDir)
+            // Only exclude the "came from" direction at the starting cell
+            if (isStart && excludeDir && dir === excludeDir)
                 continue;
             const nq = cur.q + offset.q;
             const nr = cur.r + offset.r;
@@ -360,6 +362,7 @@ export function floodFillSize(pos, gameState, excludeDir = null) {
             visited.add(key);
             queue.push({ q: nq, r: nr });
         }
+        isStart = false;
     }
     return visited.size;
 }
